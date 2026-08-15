@@ -1,0 +1,743 @@
+/* Emberdeep. The UI palette is the same Sweetie-16 set the sprites use, so
+   chrome and characters read as one piece of hardware. */
+
+:root {
+  --ink: #1a1c2c;
+  --panel: #29366f;
+  --panel-lit: #3b5dc9;
+  --edge: #566c86;
+  --paper: #f4f4f4;
+  --dim: #94b0c2;
+  --gold: #ffcd75;
+  --blood: #b13e53;
+  --flame: #ef7d57;
+  --mana: #41a6f6;
+  --leaf: #38b764;
+}
+
+body {
+  background: var(--ink);
+  color: var(--paper);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+.app {
+  position: relative;
+  height: 100%;
+}
+
+.screen {
+  display: none;
+  flex-direction: column;
+  height: 100%;
+}
+
+.screen.is-active {
+  display: flex;
+}
+
+/* Every sprite in the game goes through this: hard edges, no interpolation. */
+canvas.sprite {
+  image-rendering: pixelated;
+  display: block;
+}
+
+/* ---------- shared chrome ---------- */
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 0.8rem;
+  border-bottom: 2px solid var(--panel);
+  flex: none;
+}
+
+.bar__title {
+  flex: 1;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.coin {
+  color: var(--gold);
+  font-size: 0.9rem;
+}
+
+.round {
+  color: var(--dim);
+  font-size: 0.8rem;
+}
+
+.rpg-button {
+  padding: 0.8rem 1rem;
+  border: 2px solid var(--panel-lit);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--paper);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  /* Chunky offset shadow instead of a gradient - reads as a console button. */
+  box-shadow: 0 3px 0 #1a2450;
+  transition: transform 0.08s ease, box-shadow 0.08s ease, filter 0.12s ease;
+}
+
+.rpg-button:active:not(:disabled) {
+  transform: translateY(3px);
+  box-shadow: 0 0 0 #1a2450;
+}
+
+.rpg-button:disabled {
+  opacity: 0.4;
+  box-shadow: none;
+}
+
+.rpg-button--primary {
+  background: var(--blood);
+  border-color: var(--flame);
+  box-shadow: 0 3px 0 #6d2233;
+}
+
+.rpg-button--primary:active:not(:disabled) {
+  box-shadow: 0 0 0 #6d2233;
+}
+
+.rpg-button--quiet {
+  background: transparent;
+  border-color: var(--edge);
+  box-shadow: none;
+  font-size: 0.75rem;
+  padding: 0.55rem 0.8rem;
+}
+
+.scroller {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0.8rem;
+  display: grid;
+  gap: 0.8rem;
+  align-content: start;
+}
+
+/* ---------- title ---------- */
+
+.screen[data-screen="title"] {
+  justify-content: center;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 1.5rem;
+  text-align: center;
+}
+
+.title-block {
+  display: grid;
+  gap: 0.4rem;
+  justify-items: center;
+}
+
+.logo {
+  margin: 0;
+  font-size: clamp(2rem, 12vw, 3rem);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: var(--gold);
+  text-shadow: 0 4px 0 var(--blood);
+}
+
+.logo span {
+  color: var(--flame);
+}
+
+.tagline {
+  margin: 0 0 0.6rem;
+  color: var(--dim);
+  font-size: 0.8rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.title-art {
+  display: flex;
+  gap: 0.8rem;
+  align-items: flex-end;
+}
+
+.title-art canvas.sprite {
+  width: 64px;
+  height: 64px;
+  animation: bob 2.4s ease-in-out infinite;
+}
+
+.title-art canvas.sprite:nth-child(2) { animation-delay: 0.3s; }
+.title-art canvas.sprite:nth-child(3) { animation-delay: 0.6s; }
+
+.title-menu {
+  display: grid;
+  gap: 0.7rem;
+  width: min(100%, 16rem);
+}
+
+.link-back {
+  color: var(--dim);
+  font-size: 0.8rem;
+}
+
+/* ---------- camp ---------- */
+
+.next-card {
+  padding: 0.9rem;
+  border: 2px solid var(--panel);
+  border-radius: 6px;
+  background: rgba(41, 54, 111, 0.35);
+}
+
+.next-card__label {
+  margin: 0;
+  color: var(--dim);
+  font-size: 0.7rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.next-card__name {
+  margin: 0.15rem 0 0.35rem;
+  font-size: 1.15rem;
+  color: var(--gold);
+}
+
+.next-card__intro {
+  margin: 0 0 0.7rem;
+  color: var(--dim);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.next-card__foes {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.next-card__foes canvas.sprite {
+  width: 40px;
+  height: 40px;
+}
+
+.camp-actions {
+  flex: none;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+  padding: 0.8rem;
+  border-top: 2px solid var(--panel);
+}
+
+.camp-actions .rpg-button--primary {
+  grid-column: 1 / -1;
+}
+
+/* ---------- party rows ---------- */
+
+.party {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.party--battle {
+  flex: none;
+  padding: 0 0.6rem;
+  gap: 0.35rem;
+}
+
+.member {
+  display: grid;
+  grid-template-columns: 40px 1fr;
+  gap: 0.6rem;
+  align-items: center;
+  padding: 0.5rem 0.6rem;
+  border: 2px solid var(--panel);
+  border-radius: 5px;
+  background: rgba(41, 54, 111, 0.3);
+  text-align: left;
+  width: 100%;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.member canvas.sprite {
+  width: 40px;
+  height: 40px;
+}
+
+.member__name {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.member__level {
+  color: var(--dim);
+  font-size: 0.7rem;
+  font-weight: 400;
+}
+
+.member__bars {
+  display: grid;
+  gap: 3px;
+  margin-top: 4px;
+}
+
+.member.is-down {
+  opacity: 0.45;
+}
+
+.member.is-down .member__name::after {
+  content: " DOWN";
+  color: var(--blood);
+  font-size: 0.7rem;
+}
+
+/* Whose command you're entering right now. */
+.member.is-active {
+  border-color: var(--gold);
+  background: rgba(255, 205, 117, 0.12);
+}
+
+.member.is-targetable {
+  border-color: var(--flame);
+  animation: pulse 1s ease-in-out infinite;
+}
+
+.gauge {
+  position: relative;
+  height: 8px;
+  border: 1px solid var(--edge);
+  border-radius: 2px;
+  background: #10121f;
+  overflow: hidden;
+}
+
+.gauge__fill {
+  height: 100%;
+  transition: width 0.35s ease;
+}
+
+.gauge--hp .gauge__fill { background: var(--leaf); }
+.gauge--hp.is-hurt .gauge__fill { background: var(--gold); }
+.gauge--hp.is-critical .gauge__fill { background: var(--blood); }
+.gauge--mp .gauge__fill { background: var(--mana); }
+
+.gauge__text {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 7px;
+  letter-spacing: 0.05em;
+  color: var(--paper);
+  text-shadow: 0 1px 0 #000;
+}
+
+.chips {
+  display: flex;
+  gap: 3px;
+  flex-wrap: wrap;
+  margin-top: 3px;
+  min-height: 12px;
+}
+
+.chip {
+  padding: 1px 4px;
+  border-radius: 2px;
+  font-size: 8px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  background: var(--edge);
+  color: var(--ink);
+}
+
+.chip.is-bad { background: var(--blood); color: var(--paper); }
+.chip.is-good { background: var(--leaf); color: var(--ink); }
+
+/* ---------- battle field ---------- */
+
+.field {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.6rem;
+  /* A cave floor: darker toward the bottom, faint horizon line. */
+  background:
+    linear-gradient(180deg, transparent 0%, rgba(59, 93, 201, 0.12) 62%, rgba(26, 28, 44, 0) 63%),
+    radial-gradient(120% 70% at 50% 100%, rgba(239, 125, 87, 0.16), transparent 70%);
+}
+
+.foe {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  padding: 4px;
+  border: 2px solid transparent;
+  border-radius: 4px;
+  background: none;
+  min-width: 0;
+}
+
+.foe canvas.sprite {
+  width: var(--foe-size, 68px);
+  height: var(--foe-size, 68px);
+  animation: bob 3s ease-in-out infinite;
+}
+
+.foe.is-boss canvas.sprite {
+  --foe-size: 132px;
+}
+
+.foe__name {
+  font-size: 0.62rem;
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 84px;
+}
+
+.foe .gauge {
+  width: 100%;
+  max-width: 76px;
+  height: 6px;
+}
+
+.foe.is-targetable {
+  border-color: var(--flame);
+  animation: pulse 1s ease-in-out infinite;
+}
+
+.foe.is-dead {
+  animation: dissolve 0.5s ease forwards;
+  pointer-events: none;
+}
+
+/* ---------- log & commands ---------- */
+
+.log {
+  flex: none;
+  margin: 0;
+  padding: 0.5rem 0.8rem;
+  min-height: 3.1rem;
+  border-top: 2px solid var(--panel);
+  border-bottom: 2px solid var(--panel);
+  font-size: 0.8rem;
+  line-height: 1.35;
+  color: var(--paper);
+}
+
+.commands {
+  flex: none;
+  padding: 0.6rem;
+  min-height: 8.5rem;
+}
+
+.command-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.command-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.78rem;
+  color: var(--gold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.command-list {
+  display: grid;
+  gap: 0.4rem;
+  max-height: 11rem;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.command-list .rpg-button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 0.7rem;
+  text-transform: none;
+  letter-spacing: 0.02em;
+  text-align: left;
+}
+
+.command-list small {
+  color: var(--dim);
+  font-size: 0.68rem;
+  font-weight: 400;
+  text-transform: none;
+}
+
+.cost {
+  color: var(--mana);
+  font-size: 0.72rem;
+  flex: none;
+}
+
+.busy {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: var(--dim);
+  font-size: 0.8rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* ---------- floating combat numbers ---------- */
+
+.float {
+  position: absolute;
+  left: 50%;
+  top: 30%;
+  transform: translateX(-50%);
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--paper);
+  text-shadow: 0 2px 0 #000;
+  pointer-events: none;
+  animation: rise-fade 0.9s ease-out forwards;
+  white-space: nowrap;
+  z-index: 5;
+}
+
+.float.is-heal { color: var(--leaf); }
+.float.is-crit { color: var(--gold); font-size: 1.3rem; }
+.float.is-weak { color: var(--flame); }
+.float.is-resist { color: var(--dim); }
+.float.is-mp { color: var(--mana); }
+
+.is-hit {
+  animation: shake 0.28s ease;
+}
+
+.is-acting {
+  animation: lunge 0.3s ease;
+}
+
+/* ---------- overlays ---------- */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(26, 28, 44, 0.88);
+  z-index: 20;
+  animation: fade-in 0.2s ease;
+}
+
+.overlay[hidden] {
+  display: none;
+}
+
+.panel {
+  width: min(100%, 22rem);
+  max-height: 100%;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 1.1rem;
+  border: 2px solid var(--panel-lit);
+  border-radius: 6px;
+  background: var(--ink);
+  box-shadow: 0 6px 0 #10121f;
+}
+
+.panel h2 {
+  margin: 0 0 0.2rem;
+  font-size: 1.15rem;
+  color: var(--gold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.panel p {
+  margin: 0 0 0.7rem;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--dim);
+}
+
+.panel .rpg-button {
+  width: 100%;
+}
+
+.panel__actions {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.9rem;
+}
+
+.reward {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.3rem 0;
+  font-size: 0.85rem;
+  border-bottom: 1px solid var(--panel);
+}
+
+.reward b { color: var(--gold); }
+
+.levelup {
+  margin: 0.7rem 0 0;
+  padding: 0.6rem;
+  border: 2px solid var(--leaf);
+  border-radius: 4px;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.levelup b { color: var(--leaf); }
+
+.learned {
+  color: var(--gold);
+}
+
+.shop-tabs {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 0.7rem;
+}
+
+.shop-tabs .rpg-button {
+  flex: 1;
+  padding: 0.5rem;
+  font-size: 0.7rem;
+}
+
+.shop-tabs .rpg-button[aria-selected="true"] {
+  background: var(--panel-lit);
+  border-color: var(--gold);
+}
+
+/* ---------- animation ---------- */
+
+@keyframes bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(5px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(2px); }
+}
+
+@keyframes lunge {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+@keyframes rise-fade {
+  0% { opacity: 0; transform: translate(-50%, 6px); }
+  15% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -30px); }
+}
+
+@keyframes dissolve {
+  to { opacity: 0; transform: translateY(6px) scale(0.9); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+}
+
+/* ---------- landscape ---------- */
+
+.controls {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Portrait stacks the field above the controls; landscape is far too short for
+   that, so the same two blocks sit side by side instead. */
+@media (orientation: landscape) and (max-height: 560px) {
+  .screen[data-screen="battle"].is-active {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas:
+      "bar bar"
+      "field controls";
+  }
+
+  .screen[data-screen="battle"] .bar { grid-area: bar; }
+
+  .screen[data-screen="battle"] .field {
+    grid-area: field;
+    min-height: 0;
+  }
+
+  .screen[data-screen="battle"] .controls {
+    grid-area: controls;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    border-left: 2px solid var(--panel);
+  }
+
+  .screen[data-screen="battle"] .log {
+    border-top: none;
+    font-size: 0.7rem;
+    min-height: 2.4rem;
+  }
+
+  .screen[data-screen="battle"] .commands {
+    min-height: 0;
+  }
+
+  .command-list { max-height: 8rem; }
+
+  /* Compact the party rows so all four commands stay above the fold. */
+  .party--battle .member {
+    grid-template-columns: 26px 1fr;
+    gap: 0.4rem;
+    padding: 0.25rem 0.4rem;
+  }
+
+  .party--battle .member canvas.sprite { width: 26px; height: 26px; }
+  .party--battle .member__name { font-size: 0.7rem; }
+  .party--battle .gauge { height: 6px; }
+  .party--battle .chips { min-height: 0; }
+
+  .foe canvas.sprite { --foe-size: 52px; }
+  .foe.is-boss canvas.sprite { --foe-size: 96px; }
+}

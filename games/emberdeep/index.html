@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1a1c2c">
+  <title>Emberdeep</title>
+
+  <link rel="manifest" href="../../shared/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Emberdeep">
+  <link rel="apple-touch-icon" href="../../shared/icons/icon-180.png">
+  <link rel="icon" href="../../shared/icons/icon-192.png">
+
+  <link rel="stylesheet" href="../../shared/base.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+
+    <!-- ---------- title ---------- -->
+    <section class="screen is-active" data-screen="title">
+      <div class="title-block">
+        <h1 class="logo">EMBER<span>DEEP</span></h1>
+        <p class="tagline">A turn-based descent</p>
+        <div class="title-art" id="title-art" aria-hidden="true"></div>
+      </div>
+      <div class="title-menu">
+        <button class="rpg-button rpg-button--primary" id="btn-continue" type="button" hidden>Continue</button>
+        <button class="rpg-button" id="btn-new" type="button">New Run</button>
+        <button class="rpg-button rpg-button--quiet" id="btn-sound" type="button" aria-pressed="true">Sound: On</button>
+      </div>
+      <a class="link-back" href="../../">‹ All games</a>
+    </section>
+
+    <!-- ---------- camp ---------- -->
+    <section class="screen" data-screen="camp">
+      <header class="bar">
+        <button class="icon-button" id="camp-back" type="button" aria-label="Title screen">‹</button>
+        <span class="bar__title">Camp</span>
+        <span class="coin"><b id="camp-gold">0</b>g</span>
+      </header>
+
+      <div class="scroller">
+        <div class="next-card">
+          <p class="next-card__label">Next descent</p>
+          <h2 class="next-card__name" id="next-name"></h2>
+          <p class="next-card__intro" id="next-intro"></p>
+          <div class="next-card__foes" id="next-foes"></div>
+        </div>
+        <div class="party" id="camp-party"></div>
+      </div>
+
+      <div class="camp-actions">
+        <button class="rpg-button rpg-button--primary" id="btn-descend" type="button">Descend</button>
+        <button class="rpg-button" id="btn-shop" type="button">Shop</button>
+        <button class="rpg-button" id="btn-rest" type="button">Rest</button>
+      </div>
+    </section>
+
+    <!-- ---------- battle ---------- -->
+    <section class="screen" data-screen="battle">
+      <header class="bar">
+        <span class="bar__title" id="battle-title"></span>
+        <span class="round">Round <b id="battle-round">1</b></span>
+      </header>
+
+      <div class="field" id="enemy-row"></div>
+      <div class="controls">
+        <p class="log" id="log" aria-live="polite"></p>
+        <div class="party party--battle" id="battle-party"></div>
+        <div class="commands" id="commands"></div>
+      </div>
+    </section>
+
+  </div>
+
+  <div class="overlay" id="overlay" hidden>
+    <div class="panel" id="panel"></div>
+  </div>
+
+  <script type="module" src="game.js"></script>
+</body>
+</html>

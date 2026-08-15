@@ -35,6 +35,29 @@ not at the domain root, so a leading `/` in an `href` or `src` would 404.
 
 ## Games
 
+### Emberdeep
+
+A turn-based dungeon descent. Three heroes (Knight, Mage, Cleric) against a
+ten-stage ladder ending in a dragon.
+
+You queue commands for the whole party, then everything resolves in speed
+order — so SPD matters and each round is a plan you commit to rather than a
+reaction. Physical and magic damage, crits, four elements with per-monster
+weaknesses, six status effects, shared XP across twelve levels with skills
+unlocking as you go, gold, consumables, and three tiers of gear per hero.
+Autosaves to `localStorage` after every fight.
+
+Sprites are palette-indexed text rows in `sprites.js`, all drawn from one
+16-colour palette (Sweetie-16). Symmetric creatures are authored as an 8-wide
+half and mirrored at load — half the typing, and guaranteed symmetry. Sound is
+synthesised from oscillators, so there are no binary assets at all.
+
+The combat engine (`combat.js`) has no DOM access: it takes commands and
+returns a list of events that the UI replays with animation. That's what makes
+`tools/balance-sim.mjs` possible — it plays hundreds of complete runs in Node
+and reports fight lengths and wipe rates. Re-run it after changing anything in
+`data.js`; the tuning is not eyeballable.
+
 ### Memory Match
 
 Six emoji pairs on a 3×4 grid. Tap two cards; matches stay face up, everything

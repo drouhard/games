@@ -31,3 +31,18 @@ Rules for working in this repo. One line each.
 - Target iPhone Safari: the play area must fit portrait and landscape with no scrolling.
 - Put any new iOS workaround in `shared/base.css` so the next game inherits it.
 - Before committing, drive the page in a headless browser at iPhone dimensions and actually play it.
+
+## Game logic
+
+- Keep rules engines free of DOM access so a whole game can be simulated headlessly in Node.
+- Never tune balance by eye — simulate hundreds of runs and read the fight lengths and loss rates.
+- Check that progression actually reaches the levels that unlock late abilities, or they never appear in play.
+- A loss must never leave the player weaker than the retry needs; take gold, not health.
+
+## Pixel art
+
+- Sprites are palette-indexed text rows sharing one 16-colour palette; no binary image assets.
+- Author symmetric creatures as a mirrored half; give beasts full asymmetric rows so they read in profile.
+- Validate every sprite's row widths and palette characters before rendering — a miscount silently clips the art.
+- Render sprites at native size and scale with CSS `image-rendering: pixelated`; never scale during draw.
+- `cloneNode()` does not copy a canvas bitmap — redraw the cached master with `drawImage` instead.

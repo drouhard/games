@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f172a">
+  <title>Memory Match</title>
+
+  <link rel="manifest" href="../../shared/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Memory">
+  <link rel="apple-touch-icon" href="../../shared/icons/icon-180.png">
+  <link rel="icon" href="../../shared/icons/icon-192.png">
+
+  <link rel="stylesheet" href="../../shared/base.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <header class="hud">
+      <a class="icon-button" href="../../" aria-label="Back to games">‹</a>
+
+      <div class="stats">
+        <div class="stat">
+          <span class="stat__value" id="moves">0</span>
+          <span class="stat__label">moves</span>
+        </div>
+        <div class="stat">
+          <span class="stat__value" id="time">0:00</span>
+          <span class="stat__label">time</span>
+        </div>
+        <div class="stat">
+          <span class="stat__value" id="best">—</span>
+          <span class="stat__label">best</span>
+        </div>
+      </div>
+
+      <button class="icon-button" id="restart" type="button" aria-label="New game">↻</button>
+    </header>
+
+    <main class="board-wrap">
+      <div class="board" id="board"></div>
+    </main>
+
+    <!-- Announces match/no-match to VoiceOver without moving focus. -->
+    <p class="visually-hidden" id="status" aria-live="polite"></p>
+  </div>
+
+  <div class="win" id="win" hidden>
+    <div class="win__panel">
+      <h2 class="win__title">All matched!</h2>
+      <p class="win__summary" id="win-summary"></p>
+      <p class="win__note" id="win-note"></p>
+      <button class="pill-button" id="play-again" type="button">Play again</button>
+    </div>
+  </div>
+
+  <script src="game.js" defer></script>
+</body>
+</html>

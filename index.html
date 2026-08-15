@@ -2,26 +2,117 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Hello, World!</title>
+  <!-- viewport-fit=cover lets the page draw under the notch; base.css then
+       pads it back with env(safe-area-inset-*). -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f172a">
+  <title>Games</title>
+
+  <!-- "Add to Home Screen" support: launches fullscreen with no browser chrome. -->
+  <link rel="manifest" href="shared/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Games">
+  <link rel="apple-touch-icon" href="shared/icons/icon-180.png">
+  <link rel="icon" href="shared/icons/icon-192.png">
+
+  <link rel="stylesheet" href="shared/base.css">
   <style>
-    body {
-      margin: 0;
-      height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #0f172a;
-      color: #f8fafc;
+    .app {
+      padding: 1.5rem 1.25rem 1rem;
+      gap: 1.5rem;
     }
-    h1 {
-      font-size: 3rem;
+
+    header h1 {
+      margin: 0;
+      font-size: 2rem;
+      letter-spacing: -0.02em;
+    }
+
+    header p {
+      margin: 0.35rem 0 0;
+      color: var(--text-dim);
+      font-size: 0.95rem;
+    }
+
+    /* The launcher is the one page allowed to scroll, since the list grows. */
+    .shelf {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      display: grid;
+      gap: 0.85rem;
+      align-content: start;
+      padding-bottom: 1rem;
+    }
+
+    .game-card {
+      display: grid;
+      grid-template-columns: 3.25rem 1fr;
+      align-items: center;
+      gap: 1rem;
+      padding: 1rem 1.1rem;
+      border-radius: var(--radius);
+      background: var(--surface);
+      transition: transform 0.1s ease, background 0.15s ease;
+    }
+
+    .game-card:active {
+      transform: scale(0.98);
+      background: var(--surface-lit);
+    }
+
+    .game-card__art {
+      display: grid;
+      place-items: center;
+      width: 3.25rem;
+      height: 3.25rem;
+      border-radius: 12px;
+      background: var(--bg);
+      font-size: 1.6rem;
+    }
+
+    .game-card__title {
+      margin: 0;
+      font-size: 1.05rem;
       font-weight: 600;
+    }
+
+    .game-card__desc {
+      margin: 0.2rem 0 0;
+      color: var(--text-dim);
+      font-size: 0.85rem;
+      line-height: 1.35;
+    }
+
+    footer {
+      color: var(--text-dim);
+      font-size: 0.75rem;
+      text-align: center;
+      padding-bottom: 0.5rem;
     }
   </style>
 </head>
 <body>
-  <h1>Hello, World!</h1>
+  <div class="app">
+    <header>
+      <h1>Games</h1>
+      <p>Tap one to play.</p>
+    </header>
+
+    <main class="shelf">
+      <!-- To add a game: create games/<name>/index.html, then copy a card. -->
+      <a class="game-card" href="games/memory/">
+        <span class="game-card__art" aria-hidden="true">🃏</span>
+        <span>
+          <h2 class="game-card__title">Memory Match</h2>
+          <p class="game-card__desc">Find all six pairs in as few moves as you can.</p>
+        </span>
+      </a>
+    </main>
+
+    <footer>Add to Home Screen for fullscreen play.</footer>
+  </div>
 </body>
 </html>

@@ -1,0 +1,188 @@
+.hud {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+}
+
+.stats {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  gap: clamp(1rem, 6vw, 2.25rem);
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 3.5rem;
+}
+
+.stat__value {
+  font-size: 1.15rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat__label {
+  color: var(--text-dim);
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+}
+
+.board-wrap {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  padding: var(--gap);
+  /* Lets the board size itself against this box's height, via cqh below. */
+  container-type: size;
+}
+
+/* The board keeps a 3:4 ratio and shrinks to whichever of width or height runs
+   out first, so the grid always fits without scrolling - portrait or landscape.
+   aspect-ratio only derives the dimension you *don't* set, so height has to be
+   folded into the width calculation rather than capped with max-height. */
+.board {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(4, 1fr);
+  gap: var(--gap);
+  aspect-ratio: 3 / 4;
+  width: min(100%, 26rem); /* fallback for browsers without container queries */
+  width: min(100%, 26rem, 75cqh); /* 75cqh = the width a 3:4 box can afford */
+}
+
+.card {
+  position: relative;
+  perspective: 900px;
+  border-radius: var(--radius);
+}
+
+.card__inner {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+  transition: transform 0.35s cubic-bezier(0.3, 1.4, 0.5, 1);
+}
+
+.card.is-up .card__inner,
+.card.is-matched .card__inner {
+  transform: rotateY(180deg);
+}
+
+.card__cover,
+.card__face {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius);
+  /* -webkit- prefix keeps the reverse side hidden on older iOS Safari. */
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+
+.card__cover {
+  background: linear-gradient(150deg, var(--accent-strong), #4338ca);
+  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.25);
+}
+
+/* The dot pattern on the face-down side. */
+.card__cover::after {
+  content: "";
+  width: 34%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+}
+
+.card__face {
+  transform: rotateY(180deg);
+  background: var(--surface);
+  font-size: min(13vw, 3rem);
+  line-height: 1;
+}
+
+.card:active .card__inner {
+  transform: scale(0.95);
+}
+
+.card.is-up:active .card__inner {
+  transform: rotateY(180deg);
+}
+
+.card.is-matched {
+  pointer-events: none;
+}
+
+.card.is-matched .card__face {
+  background: var(--surface-lit);
+  opacity: 0.45;
+}
+
+.win {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background: rgba(15, 23, 42, 0.82);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  animation: fade-in 0.25s ease;
+}
+
+.win[hidden] {
+  display: none;
+}
+
+.win__panel {
+  width: 100%;
+  max-width: 20rem;
+  padding: 2rem 1.5rem;
+  border-radius: 22px;
+  background: var(--surface);
+  text-align: center;
+  animation: rise 0.3s cubic-bezier(0.2, 1.2, 0.4, 1);
+}
+
+.win__title {
+  margin: 0 0 0.5rem;
+  font-size: 1.5rem;
+}
+
+.win__summary {
+  margin: 0;
+  color: var(--text-dim);
+}
+
+.win__note {
+  margin: 0.4rem 0 1.5rem;
+  min-height: 1.2em;
+  color: var(--accent);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(14px); }
+}

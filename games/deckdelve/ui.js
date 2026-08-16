@@ -103,9 +103,57 @@ export function cardEl(def, { affordable = true, selected = false, compact = fal
 
 export const cardText = (def) => describe(def);
 
+/* A card at a size you can actually read, for the inspect-before-you-commit
+   panels. Same element as the hand card, just given more room. */
+export function zoomCard(def) {
+  const wrap = el("div", "zoom-card");
+  wrap.append(cardEl(def));
+  const body = el("div", "zoom-card__body");
+  body.append(el("h3", "zoom-card__name", def.name));
+  body.append(el("p", "zoom-card__kind", `${def.cost} energy · ${def.type}`));
+  body.append(el("p", "zoom-card__text", describe(def)));
+  wrap.append(body);
+  return wrap;
+}
+
+export function statusesIn(def) {
+  return def.effects.filter((e) => e.status).map((e) => e.status);
+}
+
+/* Spells out what Vuln or Rampart actually do, right where they are named. */
+export function statusNotes(ids) {
+  const list = el("div", "legend");
+  const seen = new Set();
+  for (const id of ids) {
+    if (seen.has(id) || !STATUSES[id]) continue;
+    seen.add(id);
+    const row = el("p", "legend__row");
+    row.append(el("b", `chip is-${STATUSES[id].kind}`, STATUSES[id].name));
+    row.append(el("span", null, ` ${STATUSES[id].help}`));
+    list.append(row);
+  }
+  return list;
+}
+
 /* ---------- monsters ----------------------------------------------------- */
 
 const INTENT_ICON = { attack: "sword", block: "shield", status: "fang", buff: "flame" };
+
+/* The tell, in words. The chip over a monster's head has room for a number
+   and nothing else, so the inspector spells the same thing out. */
+export function intentWords(intent) {
+  if (!intent) return "Waiting.";
+  switch (intent.kind) {
+    case "attack":
+      return intent.times > 1
+        ? `Attacks ${intent.times} times for ${intent.amount}.`
+        : `Attacks for ${intent.amount}.`;
+    case "block": return `Braces for ${intent.amount} Block.`;
+    case "status": return `Applies ${intent.amount} ${STATUSES[intent.status].name} to you.`;
+    case "buff": return `Gains ${intent.amount} ${STATUSES[intent.status].name}.`;
+    default: return "Waiting.";
+  }
+}
 
 export function foeEl(enemy, intent, { targetable = false } = {}) {
   const node = el("button", "foe");
@@ -178,17 +226,38 @@ export function floatText(target, text, kind = "hit") {
 const overlay = document.getElementById("overlay");
 const panel = document.getElementById("panel");
 
-export function openPanel(build) {
+/* Panels stack. Inspecting a card from the spoils screen pushes a second
+   panel, and backing out of it has to land you on the spoils again rather
+   than committing you to something you only wanted to read. */
+const stack = [];
+
+function paint() {
   panel.replaceChildren();
+  const build = stack[stack.length - 1];
+  if (!build) {
+    overlay.hidden = true;
+    return;
+  }
   build(panel);
   overlay.hidden = false;
-  overlay.classList.add("is-open");
+  panel.scrollTop = 0;
 }
 
+export function openPanel(build) {
+  stack.push(build);
+  paint();
+}
+
+/* Back one step. */
 export function closePanel() {
-  overlay.classList.remove("is-open");
-  overlay.hidden = true;
-  panel.replaceChildren();
+  stack.pop();
+  paint();
+}
+
+/* Done with the whole stack - the decision has been made. */
+export function closeAllPanels() {
+  stack.length = 0;
+  paint();
 }
 
 export function panelHeader(title, subtitle) {

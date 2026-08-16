@@ -811,19 +811,82 @@ canvas.sprite {
   flex-wrap: wrap;
 }
 
-.card-pick {
+/* ---------- inspectors ---------------------------------------------------
+
+   Nothing in this game commits on the tap that shows it to you: a tap opens
+   one of these, and the button inside is the decision. */
+
+.zoom-card {
+  --card-w: 92px;
   display: grid;
-  justify-items: center;
-  gap: 0.3rem;
-  width: calc(var(--card-w) + 12px);
+  grid-template-columns: auto 1fr;
+  gap: 0.9rem;
+  align-items: center;
+  padding: 0.6rem;
+  border: 2px solid var(--panel);
+  border-radius: 5px;
+  background: rgba(41, 54, 111, 0.25);
 }
 
-.card-pick__text {
+.zoom-card .card { pointer-events: none; }
+
+.zoom-card__name {
   margin: 0;
-  font-size: 0.52rem;
-  line-height: 1.25;
+  font-size: 1rem;
+  letter-spacing: 0.04em;
+  color: var(--gold);
+}
+
+.zoom-card__kind {
+  margin: 0.15rem 0 0.4rem;
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   color: var(--dim);
-  text-align: center;
+}
+
+.zoom-card__text {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.zoom-foe {
+  display: grid;
+  place-items: center;
+}
+
+.zoom-foe canvas.sprite {
+  width: 88px;
+  height: 88px;
+  animation: bob 3s ease-in-out infinite;
+}
+
+.foe-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.foe-list__row {
+  display: grid;
+  grid-template-columns: 40px 1fr;
+  gap: 0.6rem;
+  align-items: center;
+  padding: 0.5rem 0.6rem;
+  border: 2px solid var(--panel);
+  border-radius: 5px;
+  background: rgba(41, 54, 111, 0.25);
+  font-size: 0.78rem;
+}
+
+.foe-list__row canvas.sprite { width: 40px; height: 40px; }
+.foe-list__hp { color: var(--gold); font-size: 0.68rem; }
+
+.foe-list__moves {
+  margin: 0.2rem 0 0;
+  font-size: 0.62rem;
+  line-height: 1.35;
+  color: var(--dim);
 }
 
 .deck-grid {

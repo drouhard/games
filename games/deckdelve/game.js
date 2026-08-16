@@ -15,7 +15,7 @@ let meta = run.loadMeta();
 let current = null; // the run in progress
 let fight = null; // the combat state, while a fight is on
 let node = null; // which path node this fight belongs to
-let selected = null; // index into the hand
+let aiming = null; // hand index of a card that has been played and wants a target
 let busy = false; // true while the monsters are taking their turn
 
 const fighterNodes = new Map();
@@ -57,16 +57,29 @@ function showSanctum() {
     row.append(head);
     row.append(ui.el("p", "unlock__desc", unlock.desc));
 
-    if (!owned) {
-      row.addEventListener("pointerdown", () => {
-        if (!run.buyUnlock(meta, unlock.id)) return;
-        run.saveMeta(meta);
-        showSanctum();
-      });
-    }
+    if (!owned) row.addEventListener("pointerdown", () => openUnlock(unlock, affordable));
     list.append(row);
   }
   ui.showScreen("sanctum");
+}
+
+/* Reading what an unlock does must not spend the Echoes for it. */
+function openUnlock(unlock, affordable) {
+  ui.openPanel((panel) => {
+    panel.append(ui.panelHeader(unlock.name, unlock.desc));
+    panel.append(ui.el("p", "panel__body", `${unlock.cost} ✦ · you hold ${meta.echoes} ✦`));
+    if (affordable) {
+      panel.append(button(`Spend ${unlock.cost} ✦`, () => {
+        run.buyUnlock(meta, unlock.id);
+        run.saveMeta(meta);
+        ui.closeAllPanels();
+        showSanctum();
+      }, "primary"));
+    } else {
+      panel.append(ui.el("p", "panel__body", "Not enough Echoes yet."));
+    }
+    panel.append(button("Back", () => ui.closePanel(), "quiet"));
+  });
 }
 
 /* ---------- choosing a class --------------------------------------------- */
@@ -92,10 +105,34 @@ function showPick() {
     body.append(ui.el("p", "pick__blurb", cls.blurb));
     card.append(body);
 
-    if (!locked) card.addEventListener("pointerdown", () => startRun(cls.id));
+    if (!locked) card.addEventListener("pointerdown", () => openClass(cls));
     list.append(card);
   }
   ui.showScreen("pick");
+}
+
+/* The starting deck is the whole reason to pick one class over another, so
+   the picker shows it before the run begins rather than after. */
+function openClass(cls) {
+  ui.openPanel((panel) => {
+    const maxHp = cls.maxHp + (run.hasUnlock(meta, "vigor") ? 8 : 0);
+    panel.append(ui.panelHeader(cls.name, `${maxHp} HP · ${cls.energy || 3} energy a turn`));
+    panel.append(ui.el("p", "panel__body", cls.blurb));
+
+    const grid = ui.el("div", "deck-grid");
+    const honed = run.hasUnlock(meta, "honing");
+    for (const id of cls.deck) {
+      grid.append(cardButton(cardDef(id, honed && id === cls.honed), { compact: true }));
+    }
+    panel.append(ui.el("p", "panel__sub", "Starting deck"));
+    panel.append(grid);
+
+    panel.append(button("Begin the descent", () => {
+      ui.closeAllPanels();
+      startRun(cls.id);
+    }, "primary"));
+    panel.append(button("Back", () => ui.closePanel(), "quiet"));
+  });
 }
 
 function startRun(classId) {
@@ -144,7 +181,7 @@ function showPath() {
       for (const key of option.enemies) foes.append(ui.sprite(ENEMIES[key].sprite));
       button.append(foes);
     }
-    button.addEventListener("pointerdown", () => takeNode(option));
+    button.addEventListener("pointerdown", () => openDoor(option));
     options.append(button);
   }
   ui.showScreen("path");
@@ -156,6 +193,46 @@ function foeList(keys) {
   return [...counts]
     .map(([key, n]) => (n > 1 ? `${n}× ${ENEMIES[key].name}` : ENEMIES[key].name))
     .join(", ");
+}
+
+/* What is behind the door, before you walk through it: which monsters, how
+   much they have, and what the room is worth. */
+function openDoor(option) {
+  const info = run.NODE_INFO[option.type];
+  ui.openPanel((panel) => {
+    const label = option.type === "boss" ? ENEMIES[option.enemies[0]].name : info.label;
+    panel.append(ui.panelHeader(label, info.desc));
+
+    if (option.enemies) {
+      const list = ui.el("div", "foe-list");
+      for (const key of option.enemies) {
+        const enemy = ENEMIES[key];
+        const row = ui.el("div", "foe-list__row");
+        row.append(ui.sprite(enemy.sprite));
+        const body = ui.el("div", null);
+        body.append(ui.el("b", null, enemy.name));
+        const hp = enemy.hp[0] === enemy.hp[1] ? `${enemy.hp[0]}` : `${enemy.hp[0]}-${enemy.hp[1]}`;
+        body.append(ui.el("span", "foe-list__hp", ` ${hp} HP`));
+        body.append(ui.el("p", "foe-list__moves", moveSummary(enemy)));
+        row.append(body);
+        list.append(row);
+      }
+      panel.append(list);
+    }
+
+    panel.append(button(option.type === "boss" ? "Face it" : "Go this way", () => {
+      ui.closeAllPanels();
+      takeNode(option);
+    }, "primary"));
+    panel.append(button("Back", () => ui.closePanel(), "quiet"));
+  });
+}
+
+/* The monster's whole repertoire, so a door is a real decision. */
+function moveSummary(enemy) {
+  return enemy.moves.map((move) => ui.intentWords({
+    kind: move.kind, amount: move.amount, times: move.times || 1, status: move.status,
+  }).replace(/\.$/, "")).join(" · ");
 }
 
 function takeNode(option) {
@@ -178,11 +255,13 @@ function startFight(option) {
     enemies: option.enemies,
     extraDraw: run.hasUnlock(meta, "reserve") ? 1 : 0,
   });
-  selected = null;
+  aiming = null;
   busy = false;
   setLog(option.type === "boss" ? "The keeper turns to face you." : "");
-  render();
+  // Screen first: the hand measures itself when it renders, and a hidden
+  // screen measures zero.
   ui.showScreen("battle");
+  render();
 }
 
 function setLog(text) {
@@ -199,7 +278,7 @@ function render() {
 
   const row = $("enemy-row");
   row.replaceChildren();
-  const needsTarget = selected != null && combat.needsTarget(fight.hand[selected]);
+  const needsTarget = aiming != null;
   for (const enemy of fight.enemies) {
     if (!enemy.alive) continue;
     const element = ui.foeEl(enemy, combat.intentPreview(enemy), { targetable: needsTarget });
@@ -218,19 +297,26 @@ function render() {
     const def = combat.defOf(card);
     const element = ui.cardEl(def, {
       affordable: fight.hero.energy >= def.cost,
-      selected: selected === index,
+      selected: aiming === index,
     });
     element.addEventListener("pointerdown", () => tapCard(index));
     hand.append(element);
   });
   fanHand(hand);
 
-  $("card-detail").textContent = selected != null
-    ? ui.cardText(combat.defOf(fight.hand[selected]))
-    : "";
+  $("card-detail").textContent = aiming != null
+    ? "Tap a monster, or Cancel."
+    : "Tap a card to read it.";
+
+  // While a card is waiting on a target, End Turn would be a trap.
+  const endTurnButton = $("btn-end-turn");
+  endTurnButton.textContent = aiming != null ? "Cancel" : "End Turn";
+  endTurnButton.classList.toggle("rpg-button--quiet", aiming != null);
+  endTurnButton.classList.toggle("rpg-button--primary", aiming == null);
+  endTurnButton.disabled = busy || !!fight.over;
+
   $("pile-draw").textContent = fight.draw.length;
   $("pile-discard").textContent = fight.discard.length;
-  $("btn-end-turn").disabled = busy || !!fight.over;
 }
 
 /* Overlaps the cards just enough that the whole hand fits the screen. Ten
@@ -244,6 +330,7 @@ function fanHand(hand) {
 
   const gap = parseFloat(getComputedStyle(hand).columnGap) || 0;
   const room = hand.clientWidth;
+  if (room <= 0) return; // laid out while hidden - nothing to fit against
   const span = (width) => count * width + (count - 1) * gap;
 
   // Narrow the cards first, down to a floor where the cost pip and the icon
@@ -257,42 +344,90 @@ function fanHand(hand) {
   if (spill > 0) hand.style.setProperty("--overlap", `-${Math.ceil(spill / (count - 1))}px`);
 }
 
+/* Tapping a card reads it. Nothing is spent until the Play button in the
+   zoom is pressed - a fat thumb on a fanned hand must never cost a turn. */
 function tapCard(index) {
   if (busy || !fight || fight.over) return;
-  if (selected === index) { selected = null; return render(); }
+  // Reaching for a different card while aiming means you changed your mind
+  // about the first one, not that you want to cancel and tap again.
+  if (aiming != null) stopAiming();
 
   const card = fight.hand[index];
-  if (!combat.canPlay(fight, card)) {
-    selected = null;
-    setLog("Not enough energy.");
-    return render();
-  }
+  const def = combat.defOf(card);
+  const affordable = fight.hero.energy >= def.cost;
 
+  ui.openPanel((panel) => {
+    panel.append(ui.zoomCard(def));
+    const mentioned = ui.statusesIn(def);
+    if (mentioned.length) panel.append(ui.statusNotes(mentioned));
+
+    if (affordable) {
+      const targeted = combat.needsTarget(card) && combat.livingEnemies(fight).length > 1;
+      panel.append(button(targeted ? "Play · pick a target" : "Play", () => {
+        ui.closeAllPanels();
+        beginPlay(index);
+      }, "primary"));
+    } else {
+      panel.append(ui.el("p", "panel__body",
+        `Costs ${def.cost}. You have ${fight.hero.energy} energy left this turn.`));
+    }
+    panel.append(button("Back", () => ui.closePanel(), "quiet"));
+  });
+}
+
+function beginPlay(index) {
+  const card = fight.hand[index];
+  if (!card) return;
   if (combat.needsTarget(card)) {
     const alive = combat.livingEnemies(fight);
-    selected = index;
-    // One monster left means there is nothing to choose - just swing.
-    if (alive.length === 1) return playSelected(alive[0].uid);
-    render();
-    return;
+    if (alive.length > 1) {
+      aiming = index;
+      setLog(`${combat.defOf(card).name} — pick who it hits.`);
+      return render();
+    }
+    return playCard(index, alive[0]?.uid);
   }
-  selected = index;
-  playSelected(null);
+  playCard(index, null);
 }
 
+function stopAiming() {
+  aiming = null;
+  setLog("");
+  render();
+}
+
+/* Outside of aiming, a monster is something to read: what it has left, what
+   it is about to do, and what its statuses mean. */
 function tapEnemy(uid) {
-  if (busy || selected == null) return;
-  if (!combat.needsTarget(fight.hand[selected])) return;
-  playSelected(uid);
+  if (busy || !fight || fight.over) return;
+  if (aiming != null) {
+    const index = aiming;
+    aiming = null;
+    return playCard(index, uid);
+  }
+
+  const enemy = fight.enemies.find((e) => e.uid === uid);
+  if (!enemy) return;
+  ui.openPanel((panel) => {
+    panel.append(ui.panelHeader(enemy.name, `${enemy.hp}/${enemy.maxHp} HP`));
+    const art = ui.el("div", "zoom-foe");
+    art.append(ui.sprite(enemy.sprite));
+    panel.append(art);
+    panel.append(ui.el("p", "panel__body", ui.intentWords(combat.intentPreview(enemy))));
+    if (enemy.block > 0) panel.append(ui.el("p", "panel__body", `Holding ${enemy.block} Block.`));
+    const statuses = Object.keys(enemy.statuses).filter((id) => enemy.statuses[id] > 0);
+    if (statuses.length) panel.append(ui.statusNotes(statuses));
+    panel.append(button("Back", () => ui.closePanel(), "quiet"));
+  });
 }
 
-function playSelected(targetUid) {
-  const index = selected;
-  const def = combat.defOf(fight.hand[index]);
+function playCard(index, targetUid) {
+  const card = fight.hand[index];
+  if (!card) return render();
+  const def = combat.defOf(card);
   const events = combat.playCard(fight, index, targetUid);
-  if (!events.length) { selected = null; return render(); }
+  if (!events.length) return render();
 
-  selected = null;
   setLog(`${def.name}.`);
   render();
   showEvents(events);
@@ -320,8 +455,8 @@ function showEvents(events) {
 
 async function endTurn() {
   if (busy || !fight || fight.over) return;
+  if (aiming != null) return stopAiming(); // the button reads Cancel right now
   busy = true;
-  selected = null;
   render();
 
   const events = combat.endTurn(fight);
@@ -394,86 +529,106 @@ function finishFight() {
 /* ---------- panels ------------------------------------------------------- */
 
 function openReward() {
-  const choices = run.rewardChoices(current, meta);
+  offerCards({
+    title: "Spoils",
+    subtitle: "Read them. Take one, or take none.",
+    choices: run.rewardChoices(current, meta),
+    decline: "Take none",
+  });
+}
+
+/* One screen for every "pick a card" moment: the row reads, a tap zooms, and
+   only the button in the zoom actually adds it to the deck. */
+function offerCards({ title, subtitle, choices, decline }) {
   ui.openPanel((panel) => {
-    panel.append(ui.panelHeader("Spoils", "Take one card, or take none."));
+    panel.append(ui.panelHeader(title, subtitle));
     const row = ui.el("div", "card-row");
     for (const choice of choices) {
       const def = cardDef(choice.id, choice.upgraded);
-      const card = ui.cardEl(def);
-      const wrap = ui.el("div", "card-pick");
-      wrap.append(card, ui.el("p", "card-pick__text", ui.cardText(def)));
-      wrap.addEventListener("pointerdown", () => {
-        run.addCard(current, choice);
-        ui.closePanel();
-        afterNode();
-      });
-      row.append(wrap);
+      row.append(cardButton(def, {
+        onTap: () => openCardOffer(def, choice),
+      }));
     }
     panel.append(row);
-    panel.append(button("Take none", () => { ui.closePanel(); afterNode(); }, "quiet"));
+    // There is always a way out of a card offer. Declining a reward moves the
+    // run on; backing out of the shrine's offer returns to the shrine, which
+    // still has a Burn and a Leave it alone.
+    panel.append(decline
+      ? button(decline, () => { ui.closeAllPanels(); afterNode(); }, "quiet")
+      : button("Back", () => ui.closePanel(), "quiet"));
+  });
+}
+
+function openCardOffer(def, choice) {
+  ui.openPanel((panel) => {
+    panel.append(ui.zoomCard(def));
+    const mentioned = ui.statusesIn(def);
+    if (mentioned.length) panel.append(ui.statusNotes(mentioned));
+    panel.append(button("Add to deck", () => {
+      run.addCard(current, choice);
+      ui.closeAllPanels();
+      afterNode();
+    }, "primary"));
+    panel.append(button("Back", () => ui.closePanel(), "quiet"));
+  });
+}
+
+/* A card in a list, tappable for a closer look. */
+function cardButton(def, { onTap, compact = false } = {}) {
+  const element = ui.cardEl(def, { compact });
+  element.addEventListener("pointerdown", () => (onTap ? onTap() : openCardLook(def)));
+  return element;
+}
+
+function openCardLook(def) {
+  ui.openPanel((panel) => {
+    panel.append(ui.zoomCard(def));
+    const mentioned = ui.statusesIn(def);
+    if (mentioned.length) panel.append(ui.statusNotes(mentioned));
+    panel.append(button("Back", () => ui.closePanel(), "quiet"));
   });
 }
 
 function openCamp() {
   ui.openPanel((panel) => {
-    const healed = Math.round(current.maxHp * 0.4);
+    const healed = Math.min(current.maxHp - current.hp, Math.round(current.maxHp * 0.4));
     panel.append(ui.panelHeader("Camp", `${current.hp}/${current.maxHp} HP`));
     panel.append(button(`Rest · heal ${healed}`, () => {
       run.restHeal(current);
-      ui.closePanel();
+      ui.closeAllPanels();
       afterNode();
     }, "primary"));
     panel.append(button("Sharpen · upgrade a card", () => openDeck({
       title: "Upgrade",
-      subtitle: "Pick a card to improve, permanently.",
+      subtitle: "Tap a card to see what it becomes.",
       filter: (card) => run.canUpgrade(card),
-      onPick: (index) => {
-        run.upgradeCard(current, index);
-        ui.closePanel();
-        afterNode();
-      },
+      action: "upgrade",
     })));
+    panel.append(button("Back", () => ui.closePanel(), "quiet"));
   });
 }
 
 function openShrine() {
   ui.openPanel((panel) => {
     panel.append(ui.panelHeader("Shrine", "The stone wants a trade."));
-    panel.append(button("Take a card", () => {
-      const choices = run.shrineChoices(current);
-      ui.openPanel((inner) => {
-        inner.append(ui.panelHeader("Offerings", "One of these joins your deck."));
-        const row = ui.el("div", "card-row");
-        for (const choice of choices) {
-          const def = cardDef(choice.id, choice.upgraded);
-          const wrap = ui.el("div", "card-pick");
-          wrap.append(ui.cardEl(def), ui.el("p", "card-pick__text", ui.cardText(def)));
-          wrap.addEventListener("pointerdown", () => {
-            run.addCard(current, choice);
-            ui.closePanel();
-            afterNode();
-          });
-          row.append(wrap);
-        }
-        inner.append(row);
-      });
-    }, "primary"));
+    panel.append(button("Take a card", () => offerCards({
+      title: "Offerings",
+      subtitle: "Tap one to read it.",
+      choices: run.shrineChoices(current),
+    }), "primary"));
     panel.append(button("Burn a card", () => openDeck({
       title: "Burn",
-      subtitle: "Pick a card to remove from the deck for good.",
-      onPick: (index) => {
-        run.removeCard(current, index);
-        ui.closePanel();
-        afterNode();
-      },
+      subtitle: "Tap a card to remove it from the deck for good.",
+      action: "burn",
     })));
-    panel.append(button("Leave it alone", () => { ui.closePanel(); afterNode(); }, "quiet"));
+    panel.append(button("Leave it alone", () => { ui.closeAllPanels(); afterNode(); }, "quiet"));
   });
 }
 
-/* The deck list, used for browsing, upgrading and burning. */
-function openDeck({ title = "Deck", subtitle, filter, onPick } = {}) {
+/* The deck list, used for browsing, upgrading and burning. Every card here
+   opens for a look first; `action` decides what the button in that look
+   offers to do. */
+function openDeck({ title = "Deck", subtitle, filter, action } = {}) {
   ui.openPanel((panel) => {
     panel.append(ui.panelHeader(title, subtitle ?? `${current.deck.length} cards`));
     const grid = ui.el("div", "deck-grid");
@@ -481,36 +636,51 @@ function openDeck({ title = "Deck", subtitle, filter, onPick } = {}) {
       const def = combat.defOf(card);
       const allowed = !filter || filter(card);
       const element = ui.cardEl(def, { affordable: allowed, compact: true });
-      if (onPick && allowed) element.addEventListener("pointerdown", () => onPick(index));
+      element.addEventListener("pointerdown", () => openDeckCard(index, def, action, allowed));
       grid.append(element);
     });
     panel.append(grid);
-    if (!onPick) panel.append(statusLegend());
-    panel.append(button("Close", () => {
-      // Backing out of a camp choice must not eat the node.
-      ui.closePanel();
-      if (onPick) reopenNode();
-    }, "quiet"));
+    if (!action) panel.append(statusLegend());
+    panel.append(button("Close", () => ui.closePanel(), "quiet"));
+  });
+}
+
+function openDeckCard(index, def, action, allowed = true) {
+  ui.openPanel((panel) => {
+    panel.append(ui.zoomCard(def));
+
+    if (action && !allowed) {
+      panel.append(ui.el("p", "panel__body", "This one is already as good as it gets."));
+    } else if (action === "upgrade") {
+      const card = current.deck[index];
+      const better = cardDef(card.id, true);
+      panel.append(ui.el("p", "panel__sub", "Becomes"));
+      panel.append(ui.zoomCard(better));
+      panel.append(button("Upgrade this card", () => {
+        run.upgradeCard(current, index);
+        ui.closeAllPanels();
+        afterNode();
+      }, "primary"));
+    } else if (action === "burn") {
+      panel.append(button("Burn this card", () => {
+        run.removeCard(current, index);
+        ui.closeAllPanels();
+        afterNode();
+      }, "primary"));
+    } else {
+      const mentioned = ui.statusesIn(def);
+      if (mentioned.length) panel.append(ui.statusNotes(mentioned));
+    }
+    panel.append(button("Back", () => ui.closePanel(), "quiet"));
   });
 }
 
 /* The deck screen is the one place with room to say what Vuln actually does,
    so the rules for every status live at the bottom of it. */
 function statusLegend() {
-  const list = ui.el("div", "legend");
-  list.append(ui.el("h3", "legend__title", "Statuses"));
-  for (const [id, status] of Object.entries(STATUSES)) {
-    const row = ui.el("p", "legend__row");
-    row.append(ui.el("b", `chip is-${status.kind}`, status.name));
-    row.append(ui.el("span", null, ` ${status.help}`));
-    list.append(row);
-  }
+  const list = ui.statusNotes(Object.keys(STATUSES));
+  list.prepend(ui.el("h3", "legend__title", "Statuses"));
   return list;
-}
-
-function reopenNode() {
-  if (node?.type === "rest") openCamp();
-  else if (node?.type === "shrine") openShrine();
 }
 
 function openRunOver(cleared, earned) {
@@ -521,13 +691,13 @@ function openRunOver(cleared, earned) {
     ));
     panel.append(ui.el("p", "panel__body", `${earned} Echoes carried back to the Sanctum.`));
     panel.append(button("To the Sanctum", () => {
-      ui.closePanel();
+      ui.closeAllPanels();
       current = null;
       fight = null;
       showSanctum();
     }, "primary"));
     panel.append(button("Title", () => {
-      ui.closePanel();
+      ui.closeAllPanels();
       current = null;
       fight = null;
       showTitle();

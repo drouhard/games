@@ -18,7 +18,9 @@ shared/icons/           app icons
 games/memory/           one folder per game, fully self-contained
 tools/make-icons.py     regenerates the icons; not part of serving the site
 tools/deck-sim.mjs      balance simulator for Deckdelve
-tools/check-sprites.mjs sprite validator for Deckdelve
+tools/balance-sim.mjs   balance simulator for Emberdeep
+tools/climb-sim.mjs     balance simulator for Stickclimb
+tools/check-sprites.mjs sprite validator, for every game that has sprites
 ```
 
 Every game lives in its own folder under `games/` and owns its HTML, CSS and JS.
@@ -36,6 +38,35 @@ not at the domain root, so a leading `/` in an `href` or `src` would 404.
 4. Merge to `main` — that publishes it.
 
 ## Games
+
+### Stickclimb
+
+An incremental brawler. One screen, two stick figures, an endless ladder of
+foes whose health, damage and bounty all climb exponentially.
+
+A fight is a duel you play with your thumbs: the foe throws slabs that travel
+across the screen, low ones jumped and high ones slid under, colour-matched to
+the two dodge buttons. Every clean dodge banks momentum; **Heavy** spends the
+whole stack in one punch, so reading the attacks is what makes the numbers
+move. Strike and Focus are on cooldowns underneath.
+
+Scrap buys six upgrades, all exponential in both cost and effect. **Shadow
+Twin** keeps swinging while the tab is closed, which is what turns time away
+into a lump of scrap on your return. Any rung you have cleared can be refought
+for its bounty, and the deeper rung always pays better. Clear ten and **Ascend**
+opens: give up the scrap, the gear and the whole ladder for relics, each worth
++35% scrap forever.
+
+Losing costs nothing but the time. You keep every upgrade and retry at full
+health — a defeat that left you weaker than the retry needs would just be a
+spiral.
+
+`node tools/climb-sim.mjs` plays three-hour careers in Node at three skill
+levels and reports where the climb walls, what each Ascend is worth, and how
+long a rung takes. It earns its keep: it caught an income upgrade compounding
+faster than costs (careers ran to rung 500 with no wall in sight) and a
+prestige currency that doubled your reach every reset. Neither is visible from
+playing a rung or two.
 
 ### Deckdelve
 

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#12141f">
+  <title>Stickclimb</title>
+
+  <link rel="manifest" href="../../shared/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Stickclimb">
+  <link rel="apple-touch-icon" href="../../shared/icons/icon-180.png">
+  <link rel="icon" href="../../shared/icons/icon-192.png">
+
+  <link rel="stylesheet" href="../../shared/base.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+
+    <header class="hud">
+      <button class="hud__button" id="btn-foes" type="button">
+        <span class="hud__label">Rung</span>
+        <b id="hud-rung">1</b>
+      </button>
+      <div class="hud__purse">
+        <span class="hud__scrap"><b id="hud-scrap">0</b> scrap</span>
+        <span class="hud__relics" id="hud-relics" hidden>◈ <b id="hud-relic-count">0</b></span>
+      </div>
+      <button class="hud__button hud__button--shop" id="btn-shop" type="button">
+        <span class="hud__label">Gear</span>
+        <b id="shop-ready" class="dot" hidden>•</b>
+      </button>
+    </header>
+
+    <section class="arena">
+      <div class="plate plate--foe">
+        <span class="plate__name" id="foe-name">Blob</span>
+        <div class="bar bar--foe"><i id="foe-bar"></i><span id="foe-hp">200</span></div>
+      </div>
+
+      <!-- One screen, one ground line: the whole fight is legible without a
+           camera, which is what keeps it playable on a phone. -->
+      <div class="stage" id="stage">
+        <div class="stage__sky"></div>
+        <div class="stage__ground"></div>
+        <div class="fighter fighter--hero" id="hero"></div>
+        <div class="fighter fighter--foe" id="foe"></div>
+        <div class="layer" id="hazards"></div>
+        <div class="layer" id="floaters"></div>
+        <p class="banner" id="banner" hidden></p>
+      </div>
+
+      <div class="plate plate--hero">
+        <div class="bar bar--hero"><i id="hero-bar"></i><span id="hero-hp">70</span></div>
+        <div class="momentum" id="momentum" aria-label="Momentum"></div>
+      </div>
+    </section>
+
+    <footer class="controls">
+      <div class="dodge">
+        <button class="dodge__btn dodge__btn--jump" data-act="jump" type="button">
+          <span class="dodge__glyph">▲</span>
+          <span class="dodge__word">Jump</span>
+          <small>over low</small>
+        </button>
+        <button class="dodge__btn dodge__btn--slide" data-act="slide" type="button">
+          <span class="dodge__glyph">▼</span>
+          <span class="dodge__word">Slide</span>
+          <small>under high</small>
+        </button>
+      </div>
+      <div class="acts">
+        <button class="act" data-act="strike" type="button"><i></i><span>Strike</span></button>
+        <button class="act act--heavy" data-act="heavy" type="button"><i></i><span>Heavy</span></button>
+        <button class="act" data-act="focus" type="button"><i></i><span>Focus</span></button>
+      </div>
+    </footer>
+
+  </div>
+
+  <div class="overlay" id="overlay" hidden>
+    <div class="sheet" id="sheet"></div>
+  </div>
+
+  <script type="module" src="game.js"></script>
+</body>
+</html>

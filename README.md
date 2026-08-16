@@ -17,6 +17,8 @@ shared/manifest.json    web app manifest (Add to Home Screen)
 shared/icons/           app icons
 games/memory/           one folder per game, fully self-contained
 tools/make-icons.py     regenerates the icons; not part of serving the site
+tools/deck-sim.mjs      balance simulator for Deckdelve
+tools/check-sprites.mjs sprite validator for Deckdelve
 ```
 
 Every game lives in its own folder under `games/` and owns its HTML, CSS and JS.
@@ -34,6 +36,34 @@ not at the domain root, so a leading `/` in an `href` or `src` would 404.
 4. Merge to `main` — that publishes it.
 
 ## Games
+
+### Deckdelve
+
+A deckbuilding roguelike, in the Dream Quest mould: pick a class, take a
+ten-card deck down three floors, and build it into something that can kill the
+thing at the bottom.
+
+Fights are turn-based over a hand of cards — three or four Energy a turn, Block
+that resets, monsters that telegraph exactly what they will do next, so every
+turn is a decision with complete information. Each floor is three doors of your
+choosing (fight, elite, camp, shrine) and then its keeper. Winning a fight
+offers a card; camps heal or upgrade one; shrines add a rare or burn a card out
+of the deck for good.
+
+A run is disposable. Echoes are not: every run banks them, won or lost, and the
+Sanctum spends them on permanent unlocks — more HP, rares in the reward pool, a
+third class, an upgraded starting card. The whole board is about eight runs of
+play.
+
+Two tools, neither of them part of the site:
+
+- `node tools/deck-sim.mjs` plays hundreds of complete careers in Node and
+  reports clear rates, fight lengths and where runs end. The fight engine and
+  the run state are both DOM-free, which is what makes that possible; the
+  numbers in `data.js` are not eyeballable, and the first pass of them cleared
+  0% of runs while looking perfectly reasonable in a single fight.
+- `node tools/check-sprites.mjs --show` validates every hand-authored sprite's
+  row widths and palette characters and draws them in the terminal.
 
 ### Emberdeep
 

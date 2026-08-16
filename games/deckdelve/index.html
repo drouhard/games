@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1a1c2c">
+  <title>Deckdelve</title>
+
+  <link rel="manifest" href="../../shared/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Deckdelve">
+  <link rel="apple-touch-icon" href="../../shared/icons/icon-180.png">
+  <link rel="icon" href="../../shared/icons/icon-192.png">
+
+  <link rel="stylesheet" href="../../shared/base.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+
+    <!-- ---------- title ---------- -->
+    <section class="screen is-active" data-screen="title">
+      <div class="title-block">
+        <h1 class="logo">DECK<span>DELVE</span></h1>
+        <p class="tagline">A deckbuilding descent</p>
+        <div class="title-art" id="title-art" aria-hidden="true"></div>
+      </div>
+      <div class="title-menu">
+        <button class="rpg-button rpg-button--primary" id="btn-continue" type="button" hidden>Continue</button>
+        <button class="rpg-button" id="btn-new" type="button">New Run</button>
+        <button class="rpg-button" id="btn-sanctum" type="button">Sanctum</button>
+      </div>
+      <a class="link-back" href="../../">‹ All games</a>
+    </section>
+
+    <!-- ---------- sanctum: what survives a run ---------- -->
+    <section class="screen" data-screen="sanctum">
+      <header class="bar">
+        <button class="icon-button" data-back="title" type="button" aria-label="Title screen">‹</button>
+        <span class="bar__title">Sanctum</span>
+        <span class="echoes"><b id="sanctum-echoes">0</b> ✦</span>
+      </header>
+      <div class="scroller">
+        <p class="blurb" id="sanctum-stats"></p>
+        <div class="unlocks" id="unlock-list"></div>
+      </div>
+    </section>
+
+    <!-- ---------- choose a class ---------- -->
+    <section class="screen" data-screen="pick">
+      <header class="bar">
+        <button class="icon-button" data-back="title" type="button" aria-label="Title screen">‹</button>
+        <span class="bar__title">Choose a delver</span>
+      </header>
+      <div class="scroller" id="class-list"></div>
+    </section>
+
+    <!-- ---------- the path ---------- -->
+    <section class="screen" data-screen="path">
+      <header class="bar">
+        <button class="icon-button" data-back="title" type="button" aria-label="Leave for the title screen">‹</button>
+        <span class="bar__title" id="path-title">The Cistern</span>
+        <button class="chip-button" id="btn-deck" type="button">Deck <b id="deck-count">10</b></button>
+      </header>
+      <div class="path-body">
+        <div class="hero-slot" id="path-hero"></div>
+        <p class="path-prompt" id="path-prompt">Two ways on. Pick one.</p>
+        <div class="path-options" id="path-options"></div>
+      </div>
+    </section>
+
+    <!-- ---------- a fight ---------- -->
+    <section class="screen" data-screen="battle">
+      <header class="bar">
+        <span class="bar__title" id="battle-title">Fight</span>
+        <span class="bar__meta">Turn <b id="battle-turn">1</b></span>
+      </header>
+
+      <div class="field" id="enemy-row"></div>
+
+      <div class="controls">
+        <p class="log" id="battle-log" aria-live="polite"></p>
+        <div class="hero-slot" id="battle-hero"></div>
+        <p class="card-detail" id="card-detail"></p>
+        <div class="hand" id="hand"></div>
+        <div class="battle-actions">
+          <span class="pile">Draw <b id="pile-draw">0</b></span>
+          <button class="rpg-button rpg-button--primary" id="btn-end-turn" type="button">End Turn</button>
+          <span class="pile">Used <b id="pile-discard">0</b></span>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <div class="overlay" id="overlay" hidden>
+    <div class="panel" id="panel"></div>
+  </div>
+
+  <script type="module" src="game.js"></script>
+</body>
+</html>

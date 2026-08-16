@@ -50,6 +50,13 @@ choosing (fight, elite, camp, shrine) and then its keeper. Winning a fight
 offers a card; camps heal or upgrade one; shrines add a rare or burn a card out
 of the deck for good.
 
+Nothing commits on the tap that shows it to you. Tapping a card zooms it and
+spells out its rules; a Play button spends the energy. Tapping a door lists the
+monsters behind it, their HP and their whole repertoire; a button walks through
+it. Same for classes, card rewards, upgrades and Sanctum unlocks — read first,
+decide second, which is how Slay the Spire and Dream Quest handle a screen you
+are poking with a thumb.
+
 A run is disposable. Echoes are not: every run banks them, won or lost, and the
 Sanctum spends them on permanent unlocks — more HP, rares in the reward pool, a
 third class, an upgraded starting card. The whole board is about eight runs of

@@ -1,7 +1,9 @@
-/* Validates Deckdelve's hand-authored pixel art and prints it to the terminal.
+/* Validates the hand-authored pixel art in every game that has some, and
+   prints it to the terminal.
 
-       node tools/check-sprites.mjs          # just the row/palette check
-       node tools/check-sprites.mjs --show   # also draw every sprite as text
+       node tools/check-sprites.mjs                 # just the row/palette check
+       node tools/check-sprites.mjs --show          # also draw every sprite
+       node tools/check-sprites.mjs --show stickclimb   # only one game
 
    A miscounted row silently clips a sprite in the browser, which is a
    miserable thing to debug from a screenshot, so the check runs in Node
@@ -9,19 +11,32 @@
 
    Not part of serving the site - nothing under games/ imports it. */
 
-import { ICONS, PALETTE, SPRITES, validateSprites } from "../games/deckdelve/sprites.js";
+import * as deckdelve from "../games/deckdelve/sprites.js";
+import * as stickclimb from "../games/stickclimb/sprites.js";
 
-const problems = validateSprites();
-if (problems.length) {
-  console.error(`${problems.length} problem(s):`);
-  for (const problem of problems) console.error(`  ${problem}`);
-  process.exit(1);
-}
+const GAMES = { deckdelve, stickclimb };
 
-const all = { ...SPRITES, ...ICONS };
-console.log(`${Object.keys(all).length} sprites, all rows and palette characters check out`);
+const args = process.argv.slice(2);
+const show = args.includes("--show");
+const only = args.filter((a) => !a.startsWith("--"));
 
-if (process.argv.includes("--show")) {
+let failed = false;
+
+for (const [name, mod] of Object.entries(GAMES)) {
+  if (only.length && !only.includes(name)) continue;
+
+  const problems = mod.validateSprites();
+  const all = { ...mod.SPRITES, ...(mod.ICONS || {}) };
+
+  if (problems.length) {
+    failed = true;
+    console.error(`${name}: ${problems.length} problem(s):`);
+    for (const problem of problems) console.error(`  ${problem}`);
+    continue;
+  }
+  console.log(`${name}: ${Object.keys(all).length} sprites, all rows and palette characters check out`);
+
+  if (!show) continue;
   // 24-bit terminal colour, two spaces per pixel so they come out square.
   const block = (hex) => {
     const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
@@ -29,9 +44,11 @@ if (process.argv.includes("--show")) {
   };
   for (const [key, sprite] of Object.entries(all)) {
     const rows = sprite.rows || sprite.half.map((r) => r + [...r].reverse().join(""));
-    console.log(`\n${key} (${sprite.w}x${sprite.h})`);
+    console.log(`\n${name}/${key} (${sprite.w}x${sprite.h})`);
     for (const row of rows) {
-      console.log([...row].map((ch) => (PALETTE[ch] ? block(PALETTE[ch]) : "  ")).join(""));
+      console.log([...row].map((ch) => (mod.PALETTE[ch] ? block(mod.PALETTE[ch]) : "  ")).join(""));
     }
   }
 }
+
+if (failed) process.exit(1);

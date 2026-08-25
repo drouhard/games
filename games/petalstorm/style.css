@@ -1,0 +1,403 @@
+/* Petalstorm. The one hard layout requirement: the 3:4 play field has to fit
+   on screen whole, in portrait and in landscape, without the page scrolling.
+   Portrait stacks HUD / field / controls; landscape turns the whole thing on
+   its side and puts the chrome in a column beside the field. */
+
+:root {
+  --bg: #0b0d1a;
+  --surface: #171a2e;
+  --surface-lit: #262a45;
+  --accent: #73eff7;
+  --accent-strong: #41a6f6;
+  --petal: #a7f070;
+  --danger: #b13e53;
+  --text: #f4f4f4;
+  --text-dim: #8b93b5;
+}
+
+body {
+  background: radial-gradient(circle at 50% 0%, #1a1f3d 0%, var(--bg) 62%);
+}
+
+.app {
+  gap: 0.4rem;
+  padding: 0.4rem 0.6rem 0.6rem;
+}
+
+/* --- heads-up display ---------------------------------------------------- */
+
+.hud {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex: none;
+}
+
+.hud__block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.hud__block--right {
+  align-items: flex-end;
+}
+
+.hud__label {
+  font-size: 0.7rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.hud__label b {
+  color: var(--accent);
+}
+
+.hud__score {
+  font-size: 1.15rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.hud__ships {
+  display: flex;
+  gap: 3px;
+}
+
+.hud__ships i {
+  width: 9px;
+  height: 11px;
+  background: var(--accent-strong);
+  /* A tiny ship glyph, so the life count reads as ships not as pips. */
+  clip-path: polygon(50% 0%, 100% 78%, 72% 78%, 50% 58%, 28% 78%, 0 78%);
+}
+
+.hud__ships i.spare {
+  background: var(--surface-lit);
+}
+
+/* --- the field ----------------------------------------------------------- */
+
+.field {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+}
+
+#canvas {
+  display: block;
+  /* Sized in JS to the largest whole fit; scaled up from the 240x360 buffer,
+     never redrawn at another size. */
+  image-rendering: pixelated;
+  border-radius: 6px;
+  background: #05060e;
+  box-shadow: 0 0 0 1px #2b3157, 0 12px 40px rgba(0, 0, 0, 0.55);
+  touch-action: none;
+}
+
+.banner[hidden],
+.overlay[hidden] {
+  /* `hidden` is only a default, and both of these set `display` themselves. */
+  display: none;
+}
+
+.banner {
+  position: absolute;
+  left: 50%;
+  top: 34%;
+  transform: translate(-50%, -50%);
+  margin: 0;
+  padding: 0.35rem 0.9rem;
+  text-align: center;
+  font-size: clamp(0.95rem, 4.4vmin, 1.4rem);
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  text-shadow: 0 2px 0 #05060e, 0 0 18px rgba(115, 239, 247, 0.5);
+  pointer-events: none;
+  animation: banner 0.35s ease-out;
+}
+
+.banner small {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.62em;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+}
+
+.banner--warn {
+  color: #ffcd75;
+}
+
+.banner--danger {
+  color: #ff8ba0;
+}
+
+@keyframes banner {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.9); }
+  to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+/* --- controls ------------------------------------------------------------ */
+
+.controls {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.meter {
+  position: relative;
+  flex: 1;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--surface);
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+}
+
+.meter i {
+  position: absolute;
+  inset: 0 100% 0 0;
+  background: linear-gradient(90deg, #257179, var(--accent));
+  transition: right 0.12s linear;
+}
+
+.meter span {
+  position: relative;
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.meter--full span {
+  color: #05060e;
+  font-weight: 700;
+}
+
+.bloom {
+  flex: none;
+  display: grid;
+  gap: 1px;
+  place-items: center;
+  min-width: 6.6rem;
+  padding: 0.4rem 0.8rem;
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text-dim);
+  transition: transform 0.1s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.bloom span {
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.bloom small {
+  font-size: 0.6rem;
+  color: var(--text-dim);
+}
+
+.bloom:not([disabled]) {
+  background: linear-gradient(180deg, #41a6f6, #257179);
+  color: #05060e;
+}
+
+.bloom:not([disabled]) small {
+  color: #06222a;
+}
+
+.bloom:not([disabled]):active {
+  transform: scale(0.95);
+  filter: brightness(1.2);
+}
+
+/* --- landscape ----------------------------------------------------------- */
+/* The field keeps its 3:4 shape, so in landscape it is the height that runs
+   out first: the chrome moves into a column beside it instead of above it. */
+
+@media (orientation: landscape) {
+  /* One grid, not a row of three: the field takes the left and spans both
+     rows, and the chrome stacks into a single column down the right edge
+     where the thumbs already are. Laid out as a row instead, the HUD and the
+     controls each claim their own column and the field is squeezed between
+     two half-empty ones. */
+  .app {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) clamp(6.5rem, 20vw, 9rem);
+    grid-template-rows: auto 1fr;
+    gap: 0.5rem;
+    padding: 0.5rem;
+  }
+
+  .field {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+  }
+
+  .hud {
+    grid-column: 2;
+    grid-row: 1;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.4rem;
+  }
+
+  .hud__block--right {
+    align-items: flex-start;
+  }
+
+  .controls {
+    grid-column: 2;
+    grid-row: 2;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-end;
+    gap: 0.45rem;
+  }
+
+  .controls .icon-button {
+    align-self: flex-end;
+  }
+
+  .meter {
+    flex: none;
+    height: 32px;
+  }
+
+  .bloom {
+    width: 100%;
+    padding: 0.55rem;
+  }
+}
+
+/* --- overlays ------------------------------------------------------------ */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(5, 6, 14, 0.82);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+}
+
+.sheet {
+  width: min(100%, 24rem);
+  max-height: 100%;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: grid;
+  gap: 0.8rem;
+  padding: 1.1rem;
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.6);
+  text-align: center;
+}
+
+.sheet h1 {
+  margin: 0;
+  font-size: 1.9rem;
+  letter-spacing: 0.02em;
+  background: linear-gradient(90deg, #a7f070, #73eff7);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.sheet h2 {
+  margin: 0;
+  font-size: 1.3rem;
+}
+
+.sheet p {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+
+.sheet p b {
+  color: var(--text);
+}
+
+.sheet .final {
+  font-size: 2rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.picker {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.45rem;
+}
+
+.picker button {
+  padding: 0.6rem 0.3rem;
+  border-radius: 12px;
+  background: var(--bg);
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.picker button[aria-pressed="true"] {
+  background: var(--surface-lit);
+  color: var(--text);
+  box-shadow: inset 0 0 0 2px var(--accent-strong);
+}
+
+.rows {
+  display: grid;
+  gap: 0.3rem;
+  text-align: left;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: 9px;
+  background: var(--bg);
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+.row b {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.sheet .pill-button {
+  background: linear-gradient(180deg, #41a6f6, #257179);
+  color: #05060e;
+}
+
+.sheet .ghost {
+  padding: 0.7rem;
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text-dim);
+  font-size: 0.9rem;
+}
+
+.sheet .ghost:active {
+  background: var(--surface-lit);
+}

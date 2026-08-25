@@ -20,6 +20,7 @@ tools/make-icons.py     regenerates the icons; not part of serving the site
 tools/deck-sim.mjs      balance simulator for Deckdelve
 tools/balance-sim.mjs   balance simulator for Emberdeep
 tools/climb-sim.mjs     balance simulator for Stickclimb
+tools/hell-sim.mjs      balance simulator for Petalstorm
 tools/check-sprites.mjs sprite validator, for every game that has sprites
 ```
 
@@ -67,6 +68,45 @@ long a rung takes. It earns its keep: it caught an income upgrade compounding
 faster than costs (careers ran to rung 500 with no wall in sight) and a
 prestige currency that doubled your reach every reset. Neither is visible from
 playing a rung or two.
+
+### Petalstorm
+
+A top-down bullet hell. Four stages, four bosses, and a hitbox two pixels
+wide.
+
+Drag anywhere on the field to fly — the ship tracks your thumb rather than
+sitting under it, so your hand never covers the thing you are trying to
+watch — and the guns fire themselves. Only the bright dot at the centre of the
+ship can be hit; the wings pass through everything, which is what makes the
+curtains readable instead of merely wide.
+
+Skimming a bullet without being hit is a **graze**: it scores, and it fills
+the Bloom meter. **Bloom** throws out a shockwave that erases every bullet it
+touches, scores each one, burns whatever craft it sweeps over and leaves you
+briefly untouchable — the panic button you have to earn by flying close to
+the thing you are afraid of. Losing a ship costs one power stage and
+immediately drops two capsules to win it back, so a death never leaves you
+weaker than the retry needs.
+
+Three difficulties, each with its own high score: Novice slows every bullet
+and hands you five ships, Pilot is the fight as designed, Ace is faster and
+denser for two. Die past stage 1 and you can practise the stage you died on;
+practice runs don't touch the board.
+
+The field is a fixed 240×360 buffer scaled up by CSS with
+`image-rendering: pixelated`, so sprites are always blitted at 1:1 and the art
+stays hard-edged at any size — and the rules never depend on the screen. The
+bosses are hand-authored mirrored halves; the Petal Queen is eight petals of
+one 16-colour palette.
+
+`node tools/hell-sim.mjs` plays complete runs in Node — three thumb qualities
+against all three difficulties — and reports clear rates, where runs end, and
+what the peak bullet count on screen was. It is the only reason the tuning is
+defensible: the first pass killed the average player in stage 1 two ships at a
+time, all of it from divers that carried on firing point-blank *from below*
+after they had passed you, which is invisible when you are the one dodging.
+`--where` breaks a difficulty down by stage, phase and wave, which is how the
+stage-2 boss got found sitting on a 1.0-ships-per-run wall.
 
 ### Deckdelve
 

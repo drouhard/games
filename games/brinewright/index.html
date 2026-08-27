@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#17120e">
+  <title>Brinewright</title>
+
+  <link rel="manifest" href="../../shared/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Brinewright">
+  <link rel="apple-touch-icon" href="../../shared/icons/icon-180.png">
+  <link rel="icon" href="../../shared/icons/icon-192.png">
+
+  <link rel="stylesheet" href="../../shared/base.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+
+    <!-- The larder. Resources appear here as soon as the cellar has ever made
+         one, so the chain reveals itself link by link instead of showing five
+         zeroes on the first screen. -->
+    <header class="hud">
+      <div class="larder" id="larder"></div>
+      <div class="legacy-strip" id="legacy-strip" hidden></div>
+    </header>
+
+    <main class="panel" id="panel"></main>
+
+    <nav class="tabs" id="tabs">
+      <button class="tab tab--on" data-tab="cellar" type="button">
+        <span class="tab__glyph">🫙</span><span class="tab__word">Cellar</span>
+      </button>
+      <button class="tab" data-tab="yard" type="button">
+        <span class="tab__glyph">🌾</span><span class="tab__word">Yard</span>
+        <b class="dot" id="yard-dot" hidden></b>
+      </button>
+      <button class="tab" data-tab="legacy" type="button" hidden>
+        <span class="tab__glyph">🧬</span><span class="tab__word">Legacy</span>
+        <b class="dot" id="legacy-dot" hidden></b>
+      </button>
+      <button class="tab tab--thin" data-tab="book" type="button">
+        <span class="tab__glyph">📖</span><span class="tab__word">Book</span>
+      </button>
+    </nav>
+
+  </div>
+
+  <div class="overlay" id="overlay" hidden>
+    <div class="sheet" id="sheet"></div>
+  </div>
+
+  <script type="module" src="game.js"></script>
+</body>
+</html>

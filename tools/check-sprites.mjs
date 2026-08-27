@@ -11,11 +11,12 @@
 
    Not part of serving the site - nothing under games/ imports it. */
 
+import * as brinewright from "../games/brinewright/sprites.js";
 import * as deckdelve from "../games/deckdelve/sprites.js";
 import * as petalstorm from "../games/petalstorm/sprites.js";
 import * as stickclimb from "../games/stickclimb/sprites.js";
 
-const GAMES = { deckdelve, petalstorm, stickclimb };
+const GAMES = { brinewright, deckdelve, petalstorm, stickclimb };
 
 const args = process.argv.slice(2);
 const show = args.includes("--show");

@@ -67,6 +67,15 @@ a {
   text-decoration: none;
 }
 
+/* `hidden` is only a UA default of `display: none`, so any class that sets
+   `display` itself silently beats it - and an overlay that is still laid out
+   swallows every tap on the screen behind it while being invisible. Every
+   game here had re-solved this in its own stylesheet; it lives here now so
+   the next one inherits the fix. */
+[hidden] {
+  display: none !important;
+}
+
 /* A round icon button, sized to stay comfortably tappable (44px is Apple's
    minimum recommended touch target). */
 .icon-button {

@@ -1,0 +1,416 @@
+/* Brinewright. A cellar palette - lamp-lit amber on dark oak - laid over the
+   shared foundation in ../../shared/base.css.
+
+   The page never scrolls. The header and the tab bar are fixed, and the one
+   panel between them is the only thing with overflow, which is what keeps the
+   whole game inside an iPhone in both orientations. */
+
+:root {
+  --bg: #17120e;
+  --surface: #241c15;
+  --surface-lit: #33281e;
+  --line: #3f3325;
+  --accent: #e0a151;
+  --accent-strong: #c9762c;
+  --text: #f6ecdd;
+  --text-dim: #a8937a;
+  --good: #a7f070;
+  --bad: #b13e53;
+  --radius: 14px;
+}
+
+body {
+  background:
+    radial-gradient(120% 80% at 50% 0%, #241c15 0%, #17120e 70%);
+}
+
+.app {
+  gap: 0.4rem;
+  padding: 0.45rem 0.55rem 0;
+}
+
+/* ---------- the larder ---------------------------------------------------- */
+
+.hud { flex: none; }
+
+.larder {
+  display: flex;
+  gap: 0.35rem;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  padding-bottom: 0.15rem;
+}
+
+.larder::-webkit-scrollbar { display: none; }
+
+.stock {
+  flex: none;
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 0 0.3rem;
+  padding: 0.3rem 0.5rem;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+.stock__icon { grid-row: span 2; font-size: 1.05rem; }
+.stock__amount { font-size: 0.82rem; font-weight: 700; line-height: 1.1; }
+.stock__rate { font-size: 0.62rem; color: var(--text-dim); line-height: 1.1; }
+.stock__rate--down { color: var(--bad); }
+
+.legacy-strip {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.3rem;
+  font-size: 0.7rem;
+  color: var(--text-dim);
+}
+
+.legacy-strip b { color: var(--accent); }
+
+/* ---------- panels -------------------------------------------------------- */
+
+.panel {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: 0.15rem 0 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.section__title {
+  margin: 0.3rem 0 0;
+  font-size: 0.7rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.hint {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--text-dim);
+}
+
+/* ---------- vessels ------------------------------------------------------- */
+
+.shelf {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: 0.45rem;
+}
+
+.vessel {
+  display: grid;
+  grid-template-columns: 2rem 1fr;
+  gap: 0.1rem 0.45rem;
+  align-items: center;
+  padding: 0.45rem 0.5rem;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  text-align: left;
+  transition: transform 0.1s ease, background 0.15s ease;
+}
+
+.vessel:active { transform: scale(0.98); background: var(--surface-lit); }
+.vessel--empty { border-style: dashed; opacity: 0.75; }
+
+.vessel__art { grid-row: span 2; width: 2rem; height: 2rem; }
+.vessel__name { font-size: 0.78rem; font-weight: 700; }
+.vessel__meta { font-size: 0.62rem; color: var(--text-dim); }
+
+.vessel__bar {
+  grid-column: span 2;
+  display: flex;
+  height: 0.5rem;
+  margin-top: 0.25rem;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #120e0a;
+}
+
+.vessel__bar i { display: block; height: 100%; transition: width 0.25s linear; }
+
+.vessel__foot {
+  grid-column: span 2;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.3rem;
+  margin-top: 0.2rem;
+  font-size: 0.66rem;
+}
+
+.vessel__out { color: var(--good); font-weight: 600; }
+.vessel__sym { color: var(--accent); font-size: 0.6rem; }
+.vessel__warn { color: var(--bad); font-size: 0.6rem; }
+
+/* Sprites are drawn at 16x16 and blown up by the browser; without this they
+   would come out as a smear of interpolated brown. */
+.sprite {
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+/* ---------- rows: buildings, upgrades, prestige --------------------------- */
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 0.3rem 0.55rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+.row--flat { background: none; border-color: transparent; padding: 0.2rem 0.1rem; }
+.row__name { font-size: 0.82rem; font-weight: 600; }
+.row__desc { grid-column: 1; font-size: 0.68rem; color: var(--text-dim); line-height: 1.35; }
+.row__cost { grid-column: 1; font-size: 0.68rem; color: var(--accent); }
+.row__cost--short { color: var(--bad); }
+
+.buy {
+  grid-row: span 3;
+  align-self: stretch;
+  display: grid;
+  place-items: center;
+  min-width: 4.1rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: 10px;
+  background: var(--accent-strong);
+  color: #fff;
+  font-size: 0.74rem;
+  font-weight: 700;
+  transition: transform 0.1s ease, filter 0.15s ease;
+}
+
+.buy:active { transform: scale(0.95); filter: brightness(1.2); }
+.buy[disabled] { background: var(--surface-lit); color: var(--text-dim); }
+.buy--small { min-width: 3.2rem; padding: 0.3rem 0.45rem; font-size: 0.68rem; }
+
+/* ---------- the scatter button -------------------------------------------- */
+
+.scatter {
+  display: grid;
+  place-items: center;
+  gap: 0.1rem;
+  padding: 0.75rem;
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--accent-strong), #a35a1d);
+  color: #fff;
+  font-weight: 700;
+  transition: transform 0.06s ease, filter 0.1s ease;
+}
+
+.scatter:active { transform: scale(0.97); filter: brightness(1.18); }
+.scatter small { font-weight: 500; font-size: 0.66rem; opacity: 0.85; }
+
+/* ---------- sheets -------------------------------------------------------- */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(8, 6, 4, 0.72);
+  padding: env(safe-area-inset-top) 0 0;
+}
+
+.sheet {
+  width: 100%;
+  max-width: 34rem;
+  max-height: 92%;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: 0.9rem 0.9rem calc(1rem + env(safe-area-inset-bottom));
+  border-radius: 20px 20px 0 0;
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.sheet__head {
+  display: grid;
+  grid-template-columns: 2.6rem 1fr auto;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.sheet__art { width: 2.6rem; height: 2.6rem; }
+.sheet__title { margin: 0; font-size: 1.05rem; }
+.sheet__sub { margin: 0.1rem 0 0; font-size: 0.7rem; color: var(--text-dim); line-height: 1.35; }
+.sheet h3 {
+  margin: 0.35rem 0 0;
+  font-size: 0.7rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+/* ---------- the two dials ------------------------------------------------- */
+
+.dial { display: grid; gap: 0.3rem; }
+
+.dial__head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+}
+
+.dial__head b { color: var(--accent); }
+
+.dial__track {
+  position: relative;
+  height: 2.1rem;
+  border-radius: 999px;
+  background: #120e0a;
+  border: 1px solid var(--line);
+  touch-action: none;
+}
+
+.dial__fill {
+  position: absolute;
+  inset: 2px;
+  right: auto;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #6b3f16, var(--accent));
+}
+
+.dial__thumb {
+  position: absolute;
+  top: 50%;
+  width: 1.5rem;
+  height: 1.5rem;
+  margin: -0.75rem 0 0 -0.75rem;
+  border-radius: 50%;
+  background: var(--text);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+
+/* ---------- culture rows in the sheet ------------------------------------- */
+
+.culture {
+  display: grid;
+  grid-template-columns: 1.7rem 1fr auto;
+  align-items: center;
+  gap: 0.2rem 0.5rem;
+  padding: 0.45rem 0.55rem;
+  border-radius: 12px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+}
+
+.culture__art { grid-row: span 3; width: 1.7rem; height: 1.7rem; }
+.culture__name { font-size: 0.78rem; font-weight: 600; }
+.culture__note { grid-column: 2 / span 2; font-size: 0.64rem; color: var(--text-dim); line-height: 1.3; }
+
+.gauges { grid-column: 2 / span 2; display: flex; gap: 0.3rem; margin-top: 0.15rem; }
+
+.gauge { flex: 1; display: grid; gap: 0.12rem; }
+.gauge span { font-size: 0.53rem; color: var(--text-dim); letter-spacing: 0.04em; }
+.gauge i { display: block; height: 0.3rem; border-radius: 999px; background: #120e0a; overflow: hidden; }
+.gauge i b { display: block; height: 100%; border-radius: 999px; background: var(--good); }
+.gauge--poor i b { background: var(--bad); }
+.gauge--fair i b { background: var(--accent); }
+
+.pill {
+  display: inline-block;
+  padding: 0.12rem 0.42rem;
+  border-radius: 999px;
+  font-size: 0.6rem;
+  font-weight: 700;
+  background: var(--surface-lit);
+  color: var(--text-dim);
+}
+
+.pill--good { background: #1f3a18; color: var(--good); }
+.pill--bad { background: #3a1620; color: #f2879c; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+
+.chip {
+  padding: 0.4rem 0.6rem;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  font-size: 0.72rem;
+  transition: transform 0.1s ease;
+}
+
+.chip:active { transform: scale(0.95); }
+.chip--on { background: var(--accent-strong); border-color: var(--accent); color: #fff; font-weight: 600; }
+.chip[disabled] { opacity: 0.4; }
+
+.sheet__actions { display: flex; gap: 0.5rem; margin-top: 0.3rem; }
+.sheet__actions .pill-button { flex: 1; text-align: center; padding: 0.75rem 1rem; font-size: 0.85rem; }
+.pill-button--ghost { background: var(--surface-lit); }
+.pill-button--danger { background: var(--bad); }
+
+/* ---------- tabs ---------------------------------------------------------- */
+
+.tabs {
+  flex: none;
+  display: flex;
+  gap: 0.3rem;
+  padding: 0.35rem 0 calc(0.35rem + env(safe-area-inset-bottom));
+}
+
+.tab {
+  position: relative;
+  flex: 1;
+  display: grid;
+  place-items: center;
+  gap: 0.05rem;
+  padding: 0.4rem 0.2rem;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid transparent;
+  color: var(--text-dim);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.tab--thin { flex: 0.55; }
+.tab--on { background: var(--surface-lit); border-color: var(--line); color: var(--text); }
+.tab__glyph { font-size: 1.05rem; line-height: 1; }
+.tab__word { font-size: 0.6rem; letter-spacing: 0.04em; }
+
+.dot {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.55rem;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* Landscape: the phone is short, so the shelf goes wide and everything that
+   can lose vertical padding does. */
+@media (orientation: landscape) and (max-height: 30rem) {
+  .app { padding-top: 0.25rem; }
+  .shelf { grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr)); }
+  .stock__icon { font-size: 0.9rem; }
+  .tab__word { display: none; }
+  .tab { padding: 0.3rem; }
+  .sheet { max-height: 96%; }
+}

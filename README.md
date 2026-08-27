@@ -20,6 +20,8 @@ tools/make-icons.py     regenerates the icons; not part of serving the site
 tools/deck-sim.mjs      balance simulator for Deckdelve
 tools/balance-sim.mjs   balance simulator for Emberdeep
 tools/climb-sim.mjs     balance simulator for Stickclimb
+tools/hell-sim.mjs      balance simulator for Petalstorm
+tools/brine-sim.mjs     balance simulator for Brinewright
 tools/check-sprites.mjs sprite validator, for every game that has sprites
 ```
 
@@ -38,6 +40,58 @@ not at the domain root, so a leading `/` in an `href` or `src` would 404.
 4. Merge to `main` — that publishes it.
 
 ## Games
+
+### Brinewright
+
+An incremental about fermentation, three prestige layers deep. Fields make
+grain, tuns make wort, and everything after that is alive.
+
+A vessel is not a building with a number on it — it is an ecology. Everything
+in it shares one capacity and settles at its share, and shares are decided by
+fitness: how close the temperature is to what a culture likes, how much salt it
+tolerates, whether the pH is inside its range, and whether the vessel has the
+air it wants. Oxygen is fixed by the container, which is what makes choosing
+between a sealed carboy and a porous oak barrel a real decision; the other
+three you steer with two dials and the consequences of what you pitched.
+
+The loop the whole game turns on is real fermentation chemistry: anything that
+makes acid sours its own vessel, which eventually throttles the culture doing
+it and kills the spoilage that would otherwise eat your wort for nothing. Salt
+does the same job from the other side. A crock that has soured to pH 3.4 does
+not need watching. One that has not will fill with rot.
+
+Co-pitching two cultures costs capacity and pays a named ferment — Sourdough,
+SCOBY, Miso, Lambic, Solera, Shoyu, and in three slots Gueuze — but only while
+both halves are genuinely thriving, so every symbiosis is a temperature and a
+salinity that neither culture hates. Nothing is ever lost for good: a pitched
+culture always keeps a smear of the vessel and spoilage never takes all of it,
+so a jar that has gone wrong is a puzzle for the two dials, not a bin.
+
+Three ways to start over, each costing everything the layer below it built.
+**Rack** for mothers, which pay forever and buy a tree of permanent comforts.
+**Bloom** for spores, which buy wild strains that rewrite what a culture will
+tolerate — 70% wider heat curves, an extra pH point of sourness, spoilage that
+works for you instead of against you. **Ascend** for lineage, whose genes do not
+multiply anything: they delete rules, including spoilage itself, starvation,
+the offline window and the size of the cellar. Every passive counts what you
+have *ever* cultured rather than what is still unspent, so opening a tree never
+costs you the bonus that paid for it.
+
+`node tools/brine-sim.mjs` plays twelve-hour careers in Node and reports when
+each product first appears, what every rack paid, and where the value curve
+goes. It is the only reason the tuning is defensible, and it earned its keep
+three times over: it caught a yard whose tuns ate the whole harvest so no
+player could ever save up for another field (a permanent deadlock, invisible in
+the first five minutes); it caught five multiplier ladders whose gain-over-cost
+ratios summed to 2.9 and produced fifty trillion a second in three hours with
+no prestige at all; and it caught prestige passives reading the *held* balance,
+which made spending a currency shrink the bonus it paid and produced
+twenty-five identical racks in a row.
+
+One thing the simulator could not catch, and a browser did: a plain shared
+capacity is competitive exclusion, so the fitter culture takes the entire
+vessel and its partner dies. True of real chemostats, ruinous for a game about
+two cultures in one crock — hence the fitness-proportional shares.
 
 ### Stickclimb
 
@@ -67,6 +121,45 @@ long a rung takes. It earns its keep: it caught an income upgrade compounding
 faster than costs (careers ran to rung 500 with no wall in sight) and a
 prestige currency that doubled your reach every reset. Neither is visible from
 playing a rung or two.
+
+### Petalstorm
+
+A top-down bullet hell. Four stages, four bosses, and a hitbox two pixels
+wide.
+
+Drag anywhere on the field to fly — the ship tracks your thumb rather than
+sitting under it, so your hand never covers the thing you are trying to
+watch — and the guns fire themselves. Only the bright dot at the centre of the
+ship can be hit; the wings pass through everything, which is what makes the
+curtains readable instead of merely wide.
+
+Skimming a bullet without being hit is a **graze**: it scores, and it fills
+the Bloom meter. **Bloom** throws out a shockwave that erases every bullet it
+touches, scores each one, burns whatever craft it sweeps over and leaves you
+briefly untouchable — the panic button you have to earn by flying close to
+the thing you are afraid of. Losing a ship costs one power stage and
+immediately drops two capsules to win it back, so a death never leaves you
+weaker than the retry needs.
+
+Three difficulties, each with its own high score: Novice slows every bullet
+and hands you five ships, Pilot is the fight as designed, Ace is faster and
+denser for two. Die past stage 1 and you can practise the stage you died on;
+practice runs don't touch the board.
+
+The field is a fixed 240×360 buffer scaled up by CSS with
+`image-rendering: pixelated`, so sprites are always blitted at 1:1 and the art
+stays hard-edged at any size — and the rules never depend on the screen. The
+bosses are hand-authored mirrored halves; the Petal Queen is eight petals of
+one 16-colour palette.
+
+`node tools/hell-sim.mjs` plays complete runs in Node — three thumb qualities
+against all three difficulties — and reports clear rates, where runs end, and
+what the peak bullet count on screen was. It is the only reason the tuning is
+defensible: the first pass killed the average player in stage 1 two ships at a
+time, all of it from divers that carried on firing point-blank *from below*
+after they had passed you, which is invisible when you are the one dodging.
+`--where` breaks a difficulty down by stage, phase and wave, which is how the
+stage-2 boss got found sitting on a 1.0-ships-per-run wall.
 
 ### Deckdelve
 

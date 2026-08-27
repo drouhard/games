@@ -3,7 +3,7 @@
 
        node tools/check-sprites.mjs                 # just the row/palette check
        node tools/check-sprites.mjs --show          # also draw every sprite
-       node tools/check-sprites.mjs --show stickclimb   # only one game
+       node tools/check-sprites.mjs --show petalstorm   # only one game
 
    A miscounted row silently clips a sprite in the browser, which is a
    miserable thing to debug from a screenshot, so the check runs in Node
@@ -11,10 +11,12 @@
 
    Not part of serving the site - nothing under games/ imports it. */
 
+import * as brinewright from "../games/brinewright/sprites.js";
 import * as deckdelve from "../games/deckdelve/sprites.js";
+import * as petalstorm from "../games/petalstorm/sprites.js";
 import * as stickclimb from "../games/stickclimb/sprites.js";
 
-const GAMES = { deckdelve, stickclimb };
+const GAMES = { brinewright, deckdelve, petalstorm, stickclimb };
 
 const args = process.argv.slice(2);
 const show = args.includes("--show");

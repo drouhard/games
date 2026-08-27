@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0d1a">
+  <title>Petalstorm</title>
+
+  <link rel="manifest" href="../../shared/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Petalstorm">
+  <link rel="apple-touch-icon" href="../../shared/icons/icon-180.png">
+  <link rel="icon" href="../../shared/icons/icon-192.png">
+
+  <link rel="stylesheet" href="../../shared/base.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+
+    <header class="hud">
+      <div class="hud__block">
+        <span class="hud__label" id="hud-stage">Stage 1</span>
+        <b class="hud__score" id="hud-score">0</b>
+      </div>
+      <div class="hud__block hud__block--right">
+        <span class="hud__ships" id="hud-lives" aria-label="Ships"></span>
+        <span class="hud__label">Shot <b id="hud-power">II</b></span>
+      </div>
+    </header>
+
+    <!-- The field is a fixed 240x360 back buffer scaled up by CSS, so the art
+         stays pixel-crisp and the rules never depend on the screen size. -->
+    <section class="field" id="field">
+      <canvas id="canvas" width="240" height="360"></canvas>
+      <p class="banner" id="banner" hidden></p>
+    </section>
+
+    <footer class="controls">
+      <button class="icon-button" id="btn-pause" type="button" aria-label="Pause">❚❚</button>
+      <div class="meter" id="meter">
+        <i id="meter-fill"></i>
+        <span id="meter-label">Bloom</span>
+      </div>
+      <button class="bloom" id="btn-bloom" type="button" disabled>
+        <span>Bloom</span>
+        <small>clears bullets</small>
+      </button>
+    </footer>
+
+  </div>
+
+  <div class="overlay" id="overlay" hidden>
+    <div class="sheet" id="sheet"></div>
+  </div>
+
+  <script type="module" src="game.js"></script>
+</body>
+</html>

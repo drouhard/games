@@ -32,6 +32,7 @@ Rules for working in this repo. One line each.
 - Put any new iOS workaround in `shared/base.css` so the next game inherits it.
 - Before committing, drive the page in a headless browser at iPhone dimensions and actually play it.
 - Never commit an action on the tap that reveals it: a tap opens detail, a labelled button confirms.
+- Exception: a move that costs nothing and can be undone (a step onto empty ground) may happen on the tap.
 
 ## Game logic
 

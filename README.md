@@ -163,36 +163,51 @@ stage-2 boss got found sitting on a 1.0-ships-per-run wall.
 
 ### Deckdelve
 
-A deckbuilding roguelike, in the Dream Quest mould: pick a class, take a
-ten-card deck down three floors, and build it into something that can kill the
-thing at the bottom.
+A deckbuilding roguelike in the Dream Quest mould — which means it is a
+*dungeon crawl*, not a card gauntlet with a map drawn on it.
 
-Fights are turn-based over a hand of cards — three or four Energy a turn, Block
-that resets, monsters that telegraph exactly what they will do next, so every
-turn is a decision with complete information. Each floor is three doors of your
-choosing (fight, elite, camp, shrine) and then its keeper. Winning a fight
-offers a card; camps heal or upgrade one; shrines add a rare or burn a card out
-of the deck for good.
+You walk a floor in the fog, one tile at a time, lighting the ring around you
+as you go. There are monsters, chests, a pedlar, an altar, campfires, and the
+stairs down — with the floor's keeper sitting on them. The tiles are finite, so
+how much of a floor you clear before you go and fight the keeper is the whole
+shape of a run.
+
+Fights are duels. The monster has a deck too: each round it draws its hand and
+plays the whole thing face up, and only then do you draw and play — so you act
+on what it has already committed to, not on a guessed intent. Attack and
+Defense are pools that empty every round; you swing first, so killing it
+outright means never being hit. Tap the monster to read its entire deck.
+
+There is no energy. You can play your whole hand, and the constraint is the
+deck itself: your class resource — the Knight's Rage, the Adept's Mana, the
+Warden's Venom — persists across the fight and gates the big cards, so banking
+it is the decision. Modal cards ask which half you want. Ordering matters:
+Shield Bash reads the Defense you have already stacked.
+
+Cards do not fall out of winning a fight. Kills give XP, XP gives levels, and a
+level is a draft: two cards from your class pool or a boon (max HP, a wider
+hand, a card burned out of the deck). Gold buys cards, potions and a burning at
+the pedlar; the altar tempers a card or destroys one.
+
+A run is disposable. Lore is not: every run banks it, won or lost, and the
+Sanctum spends it on permanent unlocks — max HP, rares in the pool, a third
+class, a starting purse, a wider hand, and a map that starts drawn.
 
 Nothing commits on the tap that shows it to you. Tapping a card zooms it and
-spells out its rules; a Play button spends the energy. Tapping a door lists the
-monsters behind it, their HP and their whole repertoire; a button walks through
-it. Same for classes, card rewards, upgrades and Sanctum unlocks — read first,
-decide second, which is how Slay the Spire and Dream Quest handle a screen you
-are poking with a thumb.
+spells out its rules; a Play button (or one button per mode) is the decision.
+Tapping a tile shows what is on it — a monster's HP, how many cards it plays a
+round, and its whole deck — before a button walks you into it. The one
+exception is walking onto bare stone, which costs nothing and can be walked
+back.
 
-A run is disposable. Echoes are not: every run banks them, won or lost, and the
-Sanctum spends them on permanent unlocks — more HP, rares in the reward pool, a
-third class, an upgraded starting card. The whole board is about eight runs of
-play.
+Three tools, none of them part of the site:
 
-Two tools, neither of them part of the site:
-
-- `node tools/deck-sim.mjs` plays hundreds of complete careers in Node and
-  reports clear rates, fight lengths and where runs end. The fight engine and
-  the run state are both DOM-free, which is what makes that possible; the
-  numbers in `data.js` are not eyeballable, and the first pass of them cleared
-  0% of runs while looking perfectly reasonable in a single fight.
+- `node tools/deck-sim.mjs` plays hundreds of whole careers in Node: walking
+  the fog, duelling, levelling, shopping, three keepers. The duel, the dungeon
+  and the run state are all DOM-free, which is what makes that possible. The
+  numbers are not eyeballable — an early pass had every class dying on floor
+  one, and a later one had bosses so armoured that duels could not be won or
+  lost at all, which is why the report counts stalemates.
 - `node tools/check-sprites.mjs --show` validates every hand-authored sprite's
   row widths and palette characters and draws them in the terminal.
 

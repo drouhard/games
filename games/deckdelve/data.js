@@ -1,245 +1,274 @@
-/* Every number in the game lives here: cards, statuses, monsters, the floor
-   ladder and the meta unlocks. Nothing in this file touches the DOM, so
-   tools/deck-sim.mjs can import it and play hundreds of runs in Node.
+/* Every number in the game: cards, classes, monsters, the floors and the
+   permanent unlocks. No DOM in here, so tools/deck-sim.mjs can import it and
+   play hundreds of whole runs in Node.
 
-   Card text is generated from the effects rather than authored beside them -
-   an upgraded card would otherwise be one edit away from lying about what it
-   does. */
+   Card text is generated from the effects rather than written beside them - an
+   upgraded or modal card would otherwise be one edit away from lying about
+   what it does. */
 
-/* ---------- statuses ----------------------------------------------------
-
-   `decay: 'turn'`  ticks one off at the end of the owner's turn (timers)
-   `decay: 'stack'` counts down as it fires (poison)
-   `decay: null`    lasts the whole fight (powers) */
+/* ---------- statuses ---------------------------------------------------- */
 
 export const STATUSES = {
-  weak: { name: "Weak", kind: "bad", decay: "turn", help: "Deals 25% less damage." },
-  vulnerable: { name: "Vuln", kind: "bad", decay: "turn", help: "Takes 50% more damage." },
-  poison: { name: "Poison", kind: "bad", decay: "stack", help: "Loses that much HP at the start of its turn, then one stack falls off." },
-  strength: { name: "Strength", kind: "good", decay: null, help: "Adds to the damage of every attack." },
-  thorns: { name: "Thorns", kind: "good", decay: null, help: "Attackers take that much damage." },
-  regen: { name: "Regen", kind: "good", decay: null, help: "Heals that much at the start of your turn." },
-  rampart: { name: "Rampart", kind: "good", decay: null, help: "Gain that much Block at the start of your turn." },
-  surge: { name: "Surge", kind: "good", decay: null, help: "Gain that much extra Energy at the start of your turn." },
+  poison: { name: "Poison", kind: "bad", help: "Loses that much HP when the round ends, then one stack falls off." },
+  soften: { name: "Soften", kind: "bad", help: "That much is shaved off your swing this round." },
+  thorns: { name: "Thorns", kind: "good", help: "Whatever lands a hit on you takes that much back." },
+  edge: { name: "Edge", kind: "good", help: "Starts every round with that much Attack already banked." },
+  regen: { name: "Regen", kind: "good", help: "Heals that much when the round ends." },
+  flow: { name: "Flow", kind: "good", help: "Adds that much to your pool at the start of every round." },
 };
 
 /* ---------- cards -------------------------------------------------------
 
-   effects run in order. `up` is a shallow patch applied when the card is
-   upgraded, so an upgrade only restates what actually changes. */
+   No energy. You may play everything in your hand; the deck itself is the
+   constraint, the way it is in Dream Quest. What makes a turn a decision is
+   the class pool (`cost`, paid from Rage / Mana / Venom, which persists all
+   fight), modal cards that ask which half you want, and ordering - Shield
+   Bash reads your Defense, so guards first. */
 
 export const CARDS = {
-  // --- Vanguard: block, Strength, and turning armour into damage ---------
-  strike: {
-    name: "Strike", cost: 1, type: "attack", icon: "sword", target: "enemy",
-    effects: [{ kind: "damage", amount: 6 }],
-    up: { effects: [{ kind: "damage", amount: 9 }] },
+  // --- Knight: Rage, armour, and turning a guard into a swing ------------
+  slash: {
+    name: "Slash", icon: "sword", type: "attack", cls: "knight",
+    effects: [{ kind: "attack", amount: 4 }],
+    up: { effects: [{ kind: "attack", amount: 6 }] },
   },
   guard: {
-    name: "Guard", cost: 1, type: "skill", icon: "shield", target: "self",
-    effects: [{ kind: "block", amount: 6 }],
-    up: { effects: [{ kind: "block", amount: 9 }] },
+    name: "Guard", icon: "shield", type: "guard", cls: "knight",
+    effects: [{ kind: "defense", amount: 4 }],
+    up: { effects: [{ kind: "defense", amount: 6 }] },
   },
-  bash: {
-    name: "Bash", cost: 2, type: "attack", icon: "sword", target: "enemy",
-    effects: [{ kind: "damage", amount: 8 }, { kind: "status", status: "vulnerable", amount: 2 }],
-    up: { effects: [{ kind: "damage", amount: 10 }, { kind: "status", status: "vulnerable", amount: 3 }] },
+  rally: {
+    name: "Rally", icon: "book", type: "skill", cls: "knight",
+    effects: [{ kind: "res", amount: 2 }, { kind: "draw", amount: 1 }],
+    up: { effects: [{ kind: "res", amount: 3 }, { kind: "draw", amount: 1 }] },
   },
-  cleave: {
-    name: "Cleave", cost: 1, type: "attack", icon: "sword", target: "all",
-    effects: [{ kind: "damage", amount: 7, all: true }],
-    up: { effects: [{ kind: "damage", amount: 10, all: true }] },
+  hew: {
+    name: "Hew", icon: "sword", type: "attack", cls: "knight",
+    effects: [{ kind: "attack", amount: 7 }],
+    up: { effects: [{ kind: "attack", amount: 10 }] },
   },
   bulwark: {
-    name: "Bulwark", cost: 2, type: "skill", icon: "shield", target: "self",
-    effects: [{ kind: "block", amount: 14 }],
-    up: { effects: [{ kind: "block", amount: 19 }] },
+    name: "Bulwark", icon: "shield", type: "guard", cls: "knight",
+    effects: [{ kind: "defense", amount: 8 }],
+    up: { effects: [{ kind: "defense", amount: 11 }] },
   },
-  riposte: {
-    name: "Riposte", cost: 1, type: "attack", icon: "sword", target: "enemy",
-    effects: [{ kind: "block", amount: 5 }, { kind: "damage", amount: 5 }],
-    up: { effects: [{ kind: "block", amount: 7 }, { kind: "damage", amount: 8 }] },
-  },
-  shieldbash: {
-    name: "Shield Bash", cost: 1, type: "attack", icon: "shield", target: "enemy",
-    effects: [{ kind: "damage", scale: "block" }],
-    up: { cost: 1, effects: [{ kind: "damage", scale: "block", bonus: 5 }] },
+  sidestep: {
+    name: "Sidestep", icon: "shield", type: "skill", cls: "knight",
+    modes: [
+      { label: "Strike", effects: [{ kind: "attack", amount: 4 }] },
+      { label: "Brace", effects: [{ kind: "defense", amount: 6 }] },
+    ],
+    up: {
+      modes: [
+        { label: "Strike", effects: [{ kind: "attack", amount: 6 }] },
+        { label: "Brace", effects: [{ kind: "defense", amount: 8 }] },
+      ],
+    },
   },
   warcry: {
-    name: "War Cry", cost: 1, type: "power", icon: "book", target: "self",
-    effects: [{ kind: "buff", status: "strength", amount: 2 }],
-    up: { effects: [{ kind: "buff", status: "strength", amount: 3 }] },
+    name: "War Cry", icon: "book", type: "skill", cls: "knight",
+    effects: [{ kind: "res", amount: 2 }, { kind: "edge", amount: 1 }],
+    up: { effects: [{ kind: "res", amount: 3 }, { kind: "edge", amount: 2 }] },
   },
-  rampart: {
-    name: "Rampart", cost: 2, type: "power", icon: "shield", target: "self",
-    effects: [{ kind: "buff", status: "rampart", amount: 4 }],
-    up: { effects: [{ kind: "buff", status: "rampart", amount: 6 }] },
+  shieldbash: {
+    name: "Shield Bash", icon: "shield", type: "attack", cls: "knight",
+    effects: [{ kind: "attack", scale: "defense" }],
+    up: { effects: [{ kind: "attack", scale: "defense", bonus: 3 }] },
   },
-  secondwind: {
-    name: "Second Wind", cost: 1, type: "skill", icon: "shield", target: "self",
-    effects: [{ kind: "block", amount: 6 }, { kind: "draw", amount: 1 }],
-    up: { effects: [{ kind: "block", amount: 9 }, { kind: "draw", amount: 2 }] },
+  cleaver: {
+    name: "Cleaver", icon: "sword", type: "attack", cls: "knight", cost: 4,
+    effects: [{ kind: "attack", amount: 12 }],
+    up: { cost: 3, effects: [{ kind: "attack", amount: 12 }] },
   },
-  colossus: {
-    name: "Colossus", cost: 2, type: "power", icon: "shield", target: "self", rare: true,
-    effects: [{ kind: "block", amount: 10 }, { kind: "buff", status: "strength", amount: 2 }],
-    up: { effects: [{ kind: "block", amount: 14 }, { kind: "buff", status: "strength", amount: 3 }] },
+  ironskin: {
+    name: "Iron Skin", icon: "shield", type: "guard", cls: "knight",
+    effects: [{ kind: "defense", amount: 4 }, { kind: "thorns", amount: 2 }],
+    up: { effects: [{ kind: "defense", amount: 5 }, { kind: "thorns", amount: 3 }] },
   },
-  whirlwind: {
-    name: "Whirlwind", cost: 2, type: "attack", icon: "sword", target: "all", rare: true,
-    effects: [{ kind: "damage", amount: 6, times: 2, all: true }],
-    up: { effects: [{ kind: "damage", amount: 8, times: 2, all: true }] },
+  laststand: {
+    name: "Last Stand", icon: "heart", type: "attack", cls: "knight", cost: 5, rare: true,
+    effects: [{ kind: "attack", amount: 9 }, { kind: "heal", amount: 7 }],
+    up: { effects: [{ kind: "attack", amount: 12 }, { kind: "heal", amount: 9 }] },
+  },
+  juggernaut: {
+    name: "Juggernaut", icon: "sword", type: "power", cls: "knight", cost: 3, rare: true,
+    effects: [{ kind: "edge", amount: 3 }],
+    up: { effects: [{ kind: "edge", amount: 4 }] },
   },
 
-  // --- Adept: energy, draw, and hitting the whole room -------------------
-  bolt: {
-    name: "Bolt", cost: 1, type: "attack", icon: "bolt", target: "enemy",
-    effects: [{ kind: "damage", amount: 6 }],
-    up: { effects: [{ kind: "damage", amount: 9 }] },
+  // --- Adept: Mana banked across rounds, spent on the big turn -----------
+  spark: {
+    name: "Spark", icon: "bolt", type: "attack", cls: "adept",
+    effects: [{ kind: "attack", amount: 3 }, { kind: "res", amount: 1 }],
+    up: { effects: [{ kind: "attack", amount: 5 }, { kind: "res", amount: 1 }] },
   },
   ward: {
-    name: "Ward", cost: 1, type: "skill", icon: "shield", target: "self",
-    effects: [{ kind: "block", amount: 5 }],
-    up: { effects: [{ kind: "block", amount: 8 }] },
+    name: "Ward", icon: "shield", type: "guard", cls: "adept",
+    effects: [{ kind: "defense", amount: 4 }],
+    up: { effects: [{ kind: "defense", amount: 6 }] },
   },
-  insight: {
-    name: "Insight", cost: 1, type: "skill", icon: "book", target: "self",
+  study: {
+    name: "Study", icon: "book", type: "skill", cls: "adept",
     effects: [{ kind: "draw", amount: 2 }],
-    up: { cost: 0, effects: [{ kind: "draw", amount: 2 }] },
+    up: { effects: [{ kind: "draw", amount: 2 }, { kind: "res", amount: 1 }] },
   },
   firebolt: {
-    name: "Firebolt", cost: 1, type: "attack", icon: "flame", target: "enemy",
-    effects: [{ kind: "damage", amount: 11 }], exhaust: true,
-    up: { effects: [{ kind: "damage", amount: 15 }] },
+    name: "Firebolt", icon: "flame", type: "attack", cls: "adept", cost: 2,
+    effects: [{ kind: "attack", amount: 10 }],
+    up: { effects: [{ kind: "attack", amount: 14 }] },
   },
-  frostbite: {
-    name: "Frostbite", cost: 1, type: "attack", icon: "bolt", target: "all",
-    effects: [{ kind: "damage", amount: 4, all: true }, { kind: "status", status: "weak", amount: 1, all: true }],
-    up: { effects: [{ kind: "damage", amount: 6, all: true }, { kind: "status", status: "weak", amount: 2, all: true }] },
-  },
-  hex: {
-    name: "Hex", cost: 0, type: "skill", icon: "book", target: "enemy",
-    effects: [{ kind: "status", status: "vulnerable", amount: 2 }],
-    up: { effects: [{ kind: "status", status: "vulnerable", amount: 3 }] },
+  frost: {
+    name: "Frost", icon: "bolt", type: "attack", cls: "adept", cost: 1,
+    effects: [{ kind: "attack", amount: 3 }, { kind: "weaken", amount: 4 }],
+    up: { effects: [{ kind: "attack", amount: 4 }, { kind: "weaken", amount: 6 }] },
   },
   channel: {
-    name: "Channel", cost: 0, type: "skill", icon: "book", target: "self",
-    effects: [{ kind: "energy", amount: 1 }, { kind: "draw", amount: 1 }], exhaust: true,
-    up: { effects: [{ kind: "energy", amount: 2 }, { kind: "draw", amount: 1 }] },
+    name: "Channel", icon: "book", type: "skill", cls: "adept",
+    effects: [{ kind: "res", amount: 3 }],
+    up: { effects: [{ kind: "res", amount: 4 }, { kind: "draw", amount: 1 }] },
   },
-  chainlightning: {
-    name: "Chain Bolt", cost: 2, type: "attack", icon: "bolt", target: "random",
-    effects: [{ kind: "damage", amount: 5, times: 3, random: true }],
-    up: { effects: [{ kind: "damage", amount: 5, times: 4, random: true }] },
+  arcaneshield: {
+    name: "Arcane Shield", icon: "shield", type: "guard", cls: "adept",
+    effects: [{ kind: "defense", amount: 5 }, { kind: "res", amount: 1 }],
+    up: { effects: [{ kind: "defense", amount: 7 }, { kind: "res", amount: 2 }] },
   },
   siphon: {
-    name: "Siphon", cost: 1, type: "attack", icon: "flame", target: "enemy",
-    effects: [{ kind: "damage", amount: 6 }, { kind: "heal", amount: 3 }],
-    up: { effects: [{ kind: "damage", amount: 8 }, { kind: "heal", amount: 5 }] },
+    name: "Siphon", icon: "flame", type: "attack", cls: "adept", cost: 1,
+    effects: [{ kind: "attack", amount: 4 }, { kind: "heal", amount: 4 }],
+    up: { effects: [{ kind: "attack", amount: 6 }, { kind: "heal", amount: 5 }] },
   },
-  leyline: {
-    name: "Ley Line", cost: 2, type: "power", icon: "book", target: "self", rare: true,
-    effects: [{ kind: "buff", status: "surge", amount: 1 }],
-    up: { cost: 1, effects: [{ kind: "buff", status: "surge", amount: 1 }] },
+  prism: {
+    name: "Prism", icon: "book", type: "skill", cls: "adept",
+    modes: [
+      { label: "Draw the mana", effects: [{ kind: "res", amount: 2 }] },
+      { label: "Draw the light", effects: [{ kind: "defense", amount: 6 }] },
+    ],
+    up: {
+      modes: [
+        { label: "Draw the mana", effects: [{ kind: "res", amount: 3 }] },
+        { label: "Draw the light", effects: [{ kind: "defense", amount: 8 }] },
+      ],
+    },
   },
   meteor: {
-    name: "Meteor", cost: 2, type: "attack", icon: "flame", target: "all", rare: true,
-    effects: [{ kind: "damage", amount: 18, all: true }],
-    up: { effects: [{ kind: "damage", amount: 24, all: true }] },
+    name: "Meteor", icon: "flame", type: "attack", cls: "adept", cost: 5, rare: true,
+    effects: [{ kind: "attack", amount: 22 }],
+    up: { cost: 4, effects: [{ kind: "attack", amount: 24 }] },
+  },
+  leyline: {
+    name: "Ley Line", icon: "book", type: "power", cls: "adept", cost: 2, rare: true,
+    effects: [{ kind: "flow", amount: 2 }],
+    up: { effects: [{ kind: "flow", amount: 3 }] },
   },
 
-  // --- Warden: poison, thorns, and outlasting the room -------------------
+  // --- Warden: Venom, thorns, and outlasting the room --------------------
   rake: {
-    name: "Rake", cost: 1, type: "attack", icon: "fang", target: "enemy",
-    effects: [{ kind: "damage", amount: 5 }],
-    up: { effects: [{ kind: "damage", amount: 8 }] },
+    name: "Rake", icon: "fang", type: "attack", cls: "warden",
+    effects: [{ kind: "attack", amount: 4 }],
+    up: { effects: [{ kind: "attack", amount: 6 }] },
   },
   bark: {
-    name: "Bark", cost: 1, type: "skill", icon: "shield", target: "self",
-    effects: [{ kind: "block", amount: 5 }],
-    up: { effects: [{ kind: "block", amount: 8 }] },
+    name: "Bark", icon: "shield", type: "guard", cls: "warden",
+    effects: [{ kind: "defense", amount: 5 }],
+    up: { effects: [{ kind: "defense", amount: 7 }] },
   },
   toxin: {
-    name: "Toxin", cost: 1, type: "skill", icon: "fang", target: "enemy",
-    effects: [{ kind: "status", status: "poison", amount: 3 }],
-    up: { effects: [{ kind: "status", status: "poison", amount: 5 }] },
+    name: "Toxin", icon: "fang", type: "skill", cls: "warden",
+    effects: [{ kind: "poison", amount: 3 }, { kind: "res", amount: 1 }],
+    up: { effects: [{ kind: "poison", amount: 5 }, { kind: "res", amount: 1 }] },
   },
   nettle: {
-    name: "Nettle", cost: 0, type: "attack", icon: "fang", target: "enemy",
-    effects: [{ kind: "damage", amount: 3 }, { kind: "status", status: "poison", amount: 2 }],
-    up: { effects: [{ kind: "damage", amount: 4 }, { kind: "status", status: "poison", amount: 3 }] },
+    name: "Nettle", icon: "fang", type: "attack", cls: "warden",
+    effects: [{ kind: "attack", amount: 2 }, { kind: "poison", amount: 2 }],
+    up: { effects: [{ kind: "attack", amount: 3 }, { kind: "poison", amount: 3 }] },
   },
   venomspray: {
-    name: "Venom Spray", cost: 1, type: "skill", icon: "fang", target: "all",
-    effects: [{ kind: "status", status: "poison", amount: 3, all: true }],
-    up: { effects: [{ kind: "status", status: "poison", amount: 5, all: true }] },
+    name: "Venom Spray", icon: "fang", type: "skill", cls: "warden", cost: 2,
+    effects: [{ kind: "poison", amount: 7 }],
+    up: { effects: [{ kind: "poison", amount: 10 }] },
   },
   thorncoat: {
-    name: "Thorn Coat", cost: 1, type: "power", icon: "shield", target: "self",
-    effects: [{ kind: "buff", status: "thorns", amount: 3 }],
-    up: { effects: [{ kind: "buff", status: "thorns", amount: 5 }] },
+    name: "Thorn Coat", icon: "shield", type: "guard", cls: "warden",
+    effects: [{ kind: "defense", amount: 3 }, { kind: "thorns", amount: 3 }],
+    up: { effects: [{ kind: "defense", amount: 4 }, { kind: "thorns", amount: 4 }] },
   },
   regrowth: {
-    name: "Regrowth", cost: 1, type: "power", icon: "heart", target: "self",
-    effects: [{ kind: "buff", status: "regen", amount: 2 }],
-    up: { effects: [{ kind: "buff", status: "regen", amount: 3 }] },
+    name: "Regrowth", icon: "heart", type: "power", cls: "warden",
+    effects: [{ kind: "regen", amount: 3 }, { kind: "res", amount: 1 }],
+    up: { effects: [{ kind: "regen", amount: 4 }, { kind: "res", amount: 1 }] },
   },
   cull: {
-    name: "Cull", cost: 2, type: "attack", icon: "fang", target: "enemy",
-    effects: [{ kind: "damage", amount: 9, bonusIfPoisoned: 5 }],
-    up: { effects: [{ kind: "damage", amount: 12, bonusIfPoisoned: 7 }] },
+    name: "Cull", icon: "fang", type: "attack", cls: "warden",
+    effects: [{ kind: "attack", amount: 4, plusIfPoisoned: 5 }],
+    up: { effects: [{ kind: "attack", amount: 6, plusIfPoisoned: 6 }] },
   },
-  symbiosis: {
-    name: "Symbiosis", cost: 1, type: "skill", icon: "heart", target: "self",
-    effects: [{ kind: "draw", amount: 2 }, { kind: "heal", amount: 4 }],
-    up: { effects: [{ kind: "draw", amount: 2 }, { kind: "heal", amount: 7 }] },
+  fang: {
+    name: "Fang", icon: "fang", type: "skill", cls: "warden",
+    modes: [
+      { label: "Bite", effects: [{ kind: "attack", amount: 5 }] },
+      { label: "Envenom", effects: [{ kind: "poison", amount: 4 }] },
+    ],
+    up: {
+      modes: [
+        { label: "Bite", effects: [{ kind: "attack", amount: 7 }] },
+        { label: "Envenom", effects: [{ kind: "poison", amount: 6 }] },
+      ],
+    },
   },
-  plague: {
-    name: "Plague", cost: 2, type: "skill", icon: "fang", target: "all", rare: true,
-    effects: [{ kind: "status", status: "poison", amount: 4, all: true }],
-    up: { effects: [{ kind: "status", status: "poison", amount: 6, all: true }] },
+  blight: {
+    name: "Blight", icon: "fang", type: "skill", cls: "warden", cost: 4, rare: true,
+    effects: [{ kind: "poison", amount: 14 }],
+    up: { cost: 3, effects: [{ kind: "poison", amount: 14 }] },
   },
   brambleveil: {
-    name: "Bramble Veil", cost: 2, type: "power", icon: "shield", target: "self", rare: true,
-    effects: [{ kind: "buff", status: "thorns", amount: 3 }, { kind: "buff", status: "regen", amount: 2 }],
-    up: { effects: [{ kind: "buff", status: "thorns", amount: 5 }, { kind: "buff", status: "regen", amount: 4 }] },
+    name: "Bramble Veil", icon: "shield", type: "power", cls: "warden", cost: 2, rare: true,
+    effects: [{ kind: "thorns", amount: 4 }, { kind: "regen", amount: 2 }],
+    up: { effects: [{ kind: "thorns", amount: 5 }, { kind: "regen", amount: 3 }] },
   },
 
-  // --- neutral: found by every class ------------------------------------
-  vault: {
-    name: "Vault", cost: 1, type: "attack", icon: "sword", target: "enemy", neutral: true,
-    effects: [{ kind: "damage", amount: 6 }, { kind: "block", amount: 4 }],
-    up: { effects: [{ kind: "damage", amount: 8 }, { kind: "block", amount: 6 }] },
+  // --- neutral: shops and chests deal these to anyone --------------------
+  dagger: {
+    name: "Dagger", icon: "sword", type: "attack", neutral: true,
+    effects: [{ kind: "attack", amount: 4 }],
+    up: { effects: [{ kind: "attack", amount: 6 }] },
   },
-  steelnerve: {
-    name: "Steel Nerve", cost: 0, type: "skill", icon: "shield", target: "self", neutral: true,
-    effects: [{ kind: "block", amount: 4 }],
-    up: { effects: [{ kind: "block", amount: 6 }] },
+  buckler: {
+    name: "Buckler", icon: "shield", type: "guard", neutral: true,
+    effects: [{ kind: "defense", amount: 5 }],
+    up: { effects: [{ kind: "defense", amount: 7 }] },
   },
-  ration: {
-    name: "Ration", cost: 0, type: "skill", icon: "heart", target: "self", neutral: true,
-    effects: [{ kind: "heal", amount: 7 }], exhaust: true,
-    up: { effects: [{ kind: "heal", amount: 11 }] },
+  torch: {
+    name: "Torch", icon: "book", type: "skill", neutral: true,
+    effects: [{ kind: "draw", amount: 2 }],
+    up: { effects: [{ kind: "draw", amount: 3 }] },
   },
-  prepare: {
-    name: "Prepare", cost: 0, type: "skill", icon: "book", target: "self", neutral: true,
-    effects: [{ kind: "draw", amount: 1 }], exhaust: true,
-    up: { effects: [{ kind: "draw", amount: 2 }] },
+  bandage: {
+    name: "Bandage", icon: "heart", type: "skill", neutral: true,
+    effects: [{ kind: "heal", amount: 5 }],
+    up: { effects: [{ kind: "heal", amount: 8 }] },
   },
-  fury: {
-    name: "Fury", cost: 2, type: "attack", icon: "sword", target: "enemy", neutral: true,
-    effects: [{ kind: "damage", amount: 14 }],
-    up: { effects: [{ kind: "damage", amount: 19 }] },
+  whetstone: {
+    name: "Whetstone", icon: "sword", type: "power", neutral: true,
+    effects: [{ kind: "edge", amount: 1 }],
+    up: { effects: [{ kind: "edge", amount: 2 }] },
   },
-  adrenaline: {
-    name: "Adrenaline", cost: 0, type: "skill", icon: "bolt", target: "self", neutral: true,
-    effects: [{ kind: "energy", amount: 1 }], exhaust: true,
-    up: { effects: [{ kind: "energy", amount: 1 }, { kind: "draw", amount: 1 }] },
+  tonic: {
+    name: "Tonic", icon: "heart", type: "skill", neutral: true,
+    modes: [
+      { label: "Drink it", effects: [{ kind: "heal", amount: 4 }] },
+      { label: "Study it", effects: [{ kind: "draw", amount: 2 }] },
+    ],
+    up: {
+      modes: [
+        { label: "Drink it", effects: [{ kind: "heal", amount: 7 }] },
+        { label: "Study it", effects: [{ kind: "draw", amount: 3 }] },
+      ],
+    },
   },
 };
 
-/* Applies the `up` patch. Returns a plain card object the rest of the game
-   treats exactly like a printed one. */
+/* Applies the `up` patch. Returns a plain card the rest of the game treats
+   exactly like a printed one. */
 export function cardDef(id, upgraded) {
   const base = CARDS[id];
   if (!base) throw new Error(`unknown card: ${id}`);
@@ -247,215 +276,193 @@ export function cardDef(id, upgraded) {
   return { ...base, ...base.up, name: `${base.name}+`, upgraded: true };
 }
 
-/* Card text, derived from the effects so it can never drift out of date. */
-export function describe(card) {
-  const parts = [];
-  for (const e of card.effects) {
-    const to = e.all ? " to all" : "";
-    switch (e.kind) {
-      case "damage":
-        if (e.scale === "block") {
-          parts.push(`Deal damage equal to your Block${e.bonus ? ` + ${e.bonus}` : ""}.`);
-        } else {
-          const times = e.times > 1 ? ` ${e.times}x` : "";
-          const random = e.random ? " at random" : "";
-          const extra = e.bonusIfPoisoned ? ` +${e.bonusIfPoisoned} if poisoned.` : "";
-          parts.push(`Deal ${e.amount}${times} damage${to}${random}.${extra}`);
-        }
-        break;
-      case "block": parts.push(`Gain ${e.amount} Block.`); break;
-      case "draw": parts.push(`Draw ${e.amount}.`); break;
-      case "energy": parts.push(`Gain ${e.amount} Energy.`); break;
-      case "heal": parts.push(`Heal ${e.amount}.`); break;
-      case "status": parts.push(`Apply ${e.amount} ${STATUSES[e.status].name}${to}.`); break;
-      case "buff": parts.push(`Gain ${e.amount} ${STATUSES[e.status].name}.`); break;
-    }
+const phrase = (effect, resName) => {
+  switch (effect.kind) {
+    case "attack":
+      if (effect.scale === "defense") {
+        return `Attack equal to your Defense${effect.bonus ? ` + ${effect.bonus}` : ""}.`;
+      }
+      return `Attack ${effect.amount}${effect.plusIfPoisoned ? `, +${effect.plusIfPoisoned} if it is poisoned` : ""}.`;
+    case "defense": return `Defense ${effect.amount}.`;
+    case "res": return `Gain ${effect.amount} ${resName}.`;
+    case "draw": return `Draw ${effect.amount}.`;
+    case "heal": return `Heal ${effect.amount}.`;
+    case "poison": return `Poison ${effect.amount}.`;
+    case "weaken": return `Shave ${effect.amount} off its swing.`;
+    case "thorns": return `Thorns ${effect.amount}.`;
+    case "edge": return `Edge ${effect.amount}.`;
+    case "regen": return `Regen ${effect.amount}.`;
+    case "flow": return `Flow ${effect.amount}.`;
+    default: return "";
   }
-  if (card.exhaust) parts.push("Exhaust.");
-  return parts.join(" ");
+};
+
+export function describe(card, resName = "Rage") {
+  const cost = card.cost ? `Costs ${card.cost} ${resName}. ` : "";
+  if (card.modes) {
+    return cost + card.modes.map((m) => `${m.label}: ${m.effects.map((e) => phrase(e, resName)).join(" ")}`).join(" / ");
+  }
+  return cost + card.effects.map((e) => phrase(e, resName)).join(" ");
 }
 
 /* ---------- classes ----------------------------------------------------- */
 
 export const CLASSES = [
   {
-    id: "vanguard",
-    name: "Vanguard",
-    sprite: "vanguard",
-    maxHp: 80,
-    blurb: "Armour into damage. Stack Block, then swing it.",
-    deck: ["strike", "strike", "strike", "strike", "strike", "guard", "guard", "guard", "guard", "bash"],
-    honed: "bash", // the card the Honing unlock upgrades at run start
-    pool: ["cleave", "bulwark", "riposte", "shieldbash", "warcry", "rampart", "secondwind", "colossus", "whirlwind"],
+    id: "knight", name: "Knight", sprite: "vanguard",
+    resource: "Rage", maxHp: 48, hand: 4,
+    blurb: "Rage builds as you take hits. Bank it, then swing something enormous.",
+    // Rage banks itself as a fight drags, and faster when you are being hit.
+    ragePerRound: true,
+    deck: ["slash", "slash", "slash", "slash", "guard", "guard", "guard", "rally"],
+    pool: ["hew", "bulwark", "sidestep", "warcry", "shieldbash", "cleaver", "ironskin", "laststand", "juggernaut"],
   },
   {
-    id: "adept",
-    name: "Adept",
-    sprite: "adept",
-    maxHp: 62,
-    energy: 4, // fewer hit points, but a fourth Energy every single turn
-    blurb: "Energy and cards. Small hits, but a lot of them.",
-    deck: ["bolt", "bolt", "bolt", "bolt", "bolt", "ward", "ward", "ward", "ward", "insight"],
-    honed: "insight",
-    pool: ["firebolt", "frostbite", "hex", "channel", "chainlightning", "siphon", "leyline", "meteor"],
+    id: "adept", name: "Adept", sprite: "adept",
+    resource: "Mana", maxHp: 44, hand: 5,
+    blurb: "Small hits that print Mana, saved for the round that ends it.",
+    deck: ["spark", "spark", "spark", "spark", "ward", "ward", "ward", "study"],
+    pool: ["firebolt", "frost", "channel", "arcaneshield", "siphon", "prism", "meteor", "leyline"],
   },
   {
-    id: "warden",
-    name: "Warden",
-    sprite: "warden",
-    maxHp: 66,
-    blurb: "Poison and thorns. Let the room kill itself.",
-    deck: ["rake", "rake", "rake", "rake", "rake", "bark", "bark", "bark", "bark", "toxin"],
-    honed: "toxin",
-    pool: ["nettle", "venomspray", "thorncoat", "regrowth", "cull", "symbiosis", "plague", "brambleveil"],
-    unlock: "warden", // gated behind a Sanctum unlock
+    id: "warden", name: "Warden", sprite: "warden",
+    resource: "Venom", maxHp: 46, hand: 5,
+    blurb: "Poison does not care about armour. Outlast, and let it work.",
+    deck: ["rake", "rake", "rake", "rake", "bark", "bark", "bark", "toxin"],
+    pool: ["nettle", "venomspray", "thorncoat", "regrowth", "cull", "fang", "blight", "brambleveil"],
+    unlock: "warden",
   },
 ];
 
-export const NEUTRAL_POOL = ["vault", "steelnerve", "ration", "prepare", "fury", "adrenaline"];
+export const NEUTRAL_POOL = ["dagger", "buckler", "torch", "bandage", "whetstone", "tonic"];
 
-/* ---------- monsters ----------------------------------------------------
+/* ---------- monster decks -----------------------------------------------
 
-   A monster telegraphs its next move, so every turn is a decision with
-   complete information. `pattern` cycles through `moves` by index; a monster
-   with no pattern rolls a random move each turn. */
+   A monster is a duellist with a deck, not a script. It draws its hand each
+   round and plays the whole thing before you play yours, so you always act on
+   what it actually did - and inspecting one shows you the deck it is drawing
+   from, which is the real information. */
 
-export const ENEMIES = {
+export const FOE_CARDS = {
+  tap: { name: "Tap", effects: [{ kind: "attack", amount: 3 }] },
+  nip: { name: "Nip", effects: [{ kind: "attack", amount: 2 }] },
+  bite: { name: "Bite", effects: [{ kind: "attack", amount: 5 }] },
+  rend: { name: "Rend", effects: [{ kind: "attack", amount: 7 }] },
+  smash: { name: "Smash", effects: [{ kind: "attack", amount: 9 }] },
+  slam: { name: "Slam", effects: [{ kind: "attack", amount: 6 }] },
+  bolt: { name: "Bolt", effects: [{ kind: "attack", amount: 6 }] },
+  harden: { name: "Harden", effects: [{ kind: "defense", amount: 3 }] },
+  shell: { name: "Shell", effects: [{ kind: "defense", amount: 5 }] },
+  spit: { name: "Spit", effects: [{ kind: "poison", amount: 2 }] },
+  hex: { name: "Hex", effects: [{ kind: "weaken", amount: 4 }] },
+  drain: { name: "Drain", effects: [{ kind: "attack", amount: 4 }, { kind: "heal", amount: 3 }] },
+  howl: { name: "Howl", effects: [{ kind: "edge", amount: 1 }] },
+  knit: { name: "Knit", effects: [{ kind: "regen", amount: 3 }] },
+};
+
+export const FOES = {
   mote: {
-    name: "Mote", sprite: "mote", hp: [14, 17],
-    moves: [
-      { kind: "attack", amount: 5 },
-      { kind: "block", amount: 5 },
-    ],
-    pattern: [0, 0, 1],
+    name: "Cinder Mote", sprite: "mote", hp: [14, 17], draws: 2, xp: 5, gold: [4, 7],
+    deck: ["tap", "tap", "tap", "harden"],
   },
   imp: {
-    name: "Imp", sprite: "imp", hp: [12, 15],
-    moves: [
-      { kind: "attack", amount: 3, times: 2 },
-      { kind: "status", status: "weak", amount: 1 },
-    ],
-    pattern: [0, 1, 0],
+    name: "Imp", sprite: "imp", hp: [12, 16], draws: 2, xp: 6, gold: [4, 8],
+    deck: ["nip", "nip", "spit", "harden"],
   },
   hound: {
-    name: "Ash Hound", sprite: "hound", hp: [26, 30],
-    moves: [
-      { kind: "attack", amount: 9 },
-      { kind: "attack", amount: 4, times: 2 },
-      { kind: "buff", status: "strength", amount: 2 },
-    ],
-    pattern: [0, 2, 1, 0],
+    name: "Ash Hound", sprite: "hound", hp: [21, 25], draws: 2, xp: 11, gold: [7, 12],
+    deck: ["bite", "bite", "nip", "harden", "harden"],
   },
   hexer: {
-    name: "Hexer", sprite: "hexer", hp: [22, 26],
-    moves: [
-      { kind: "attack", amount: 7 },
-      { kind: "status", status: "vulnerable", amount: 2 },
-      { kind: "block", amount: 6 },
-    ],
-    pattern: [1, 0, 2, 0],
+    name: "Hexer", sprite: "hexer", hp: [19, 23], draws: 2, xp: 12, gold: [8, 13],
+    deck: ["bolt", "hex", "drain", "harden", "spit"],
   },
   revenant: {
-    name: "Revenant", sprite: "revenant", hp: [34, 40],
-    moves: [
-      { kind: "attack", amount: 10 },
-      { kind: "attack", amount: 5, times: 2 },
-      { kind: "status", status: "weak", amount: 2 },
-    ],
-    pattern: [0, 1, 2, 0, 1],
+    name: "Revenant", sprite: "revenant", hp: [27, 32], draws: 3, xp: 20, gold: [12, 18],
+    deck: ["rend", "rend", "drain", "harden", "shell"],
   },
   brute: {
-    name: "Slag Brute", sprite: "brute", hp: [46, 52],
-    moves: [
-      { kind: "attack", amount: 13 },
-      { kind: "block", amount: 10 },
-      { kind: "buff", status: "strength", amount: 3 },
-    ],
-    pattern: [2, 0, 1, 0, 0],
+    name: "Slag Brute", sprite: "brute", hp: [34, 40], draws: 2, xp: 24, gold: [14, 20],
+    deck: ["smash", "smash", "howl", "shell", "harden"],
   },
 
-  // --- bosses -----------------------------------------------------------
   sentinel: {
-    name: "The Sentinel", sprite: "sentinel", boss: true, hp: [80, 80],
-    moves: [
-      { kind: "attack", amount: 11 },
-      { kind: "attack", amount: 5, times: 3 },
-      { kind: "block", amount: 10 },
-      { kind: "buff", status: "strength", amount: 2 },
-    ],
-    pattern: [0, 2, 1, 3, 0, 1],
+    name: "The Sentinel", sprite: "sentinel", boss: true, hp: [40, 40], draws: 3, xp: 30, gold: [30, 30],
+    deck: ["slam", "slam", "slam", "harden", "shell", "howl"],
   },
   hexlord: {
-    name: "Hexlord Vane", sprite: "hexlord", boss: true, hp: [100, 100],
-    moves: [
-      { kind: "attack", amount: 13 },
-      { kind: "attack", amount: 6, times: 3 },
-      { kind: "status", status: "vulnerable", amount: 2 },
-      { kind: "status", status: "weak", amount: 2 },
-    ],
-    pattern: [2, 0, 1, 3, 0, 1, 0],
+    name: "Hexlord Vane", sprite: "hexlord", boss: true, hp: [60, 60], draws: 3, xp: 55, gold: [45, 45],
+    deck: ["bolt", "bolt", "bolt", "hex", "drain", "shell", "spit"],
   },
   archivist: {
-    name: "The Archivist", sprite: "archivist", boss: true, hp: [124, 124],
-    moves: [
-      { kind: "attack", amount: 14 },
-      { kind: "attack", amount: 6, times: 3 },
-      { kind: "buff", status: "strength", amount: 3 },
-      { kind: "block", amount: 12 },
-    ],
-    pattern: [2, 0, 1, 3, 0, 1, 0, 1],
+    name: "The Archivist", sprite: "archivist", boss: true, hp: [78, 78], draws: 3, xp: 90, gold: [60, 60],
+    deck: ["rend", "rend", "smash", "smash", "shell", "drain", "howl", "knit"],
   },
 };
 
-/* ---------- the ladder --------------------------------------------------
+/* ---------- the dungeon -------------------------------------------------
 
-   Three floors. Each floor is three chosen nodes and then its boss, so a run
-   is nine to twelve fights depending on how much you rest. */
+   Three floors. Each is a grid you walk in the fog, and the stairs down are
+   underneath the floor's keeper - so how much of a floor you clear before you
+   fight it is the whole shape of a run. Tiles are finite, which is what stops
+   grinding: there is only so much XP on a floor. */
 
 export const FLOORS = [
   {
-    name: "The Cistern",
-    fights: [["mote", "mote"], ["imp", "imp"], ["mote", "imp"], ["imp", "imp", "mote"]],
-    elites: [["hound"], ["hexer", "imp"]],
-    boss: "sentinel",
+    name: "The Cistern", size: 6,
+    foes: ["mote", "mote", "imp", "imp", "mote", "imp"], elites: ["hound"],
+    boss: "sentinel", walls: 4, chests: 2, shops: 1, altars: 1, fires: 2,
   },
   {
-    name: "The Kiln",
-    fights: [["hound"], ["hexer", "mote"], ["hound", "imp"], ["hexer", "imp", "imp"]],
-    elites: [["revenant"], ["hound", "hexer"]],
-    boss: "hexlord",
+    name: "The Kiln", size: 6,
+    foes: ["hound", "hound", "hexer", "hexer", "hound", "imp"], elites: ["revenant"],
+    boss: "hexlord", walls: 5, chests: 2, shops: 1, altars: 1, fires: 2,
   },
   {
-    name: "The Vault",
-    fights: [["revenant"], ["hexer", "hound"], ["revenant", "imp"], ["hound", "hound"]],
-    elites: [["brute"], ["revenant", "hexer"]],
-    boss: "archivist",
+    name: "The Vault", size: 7,
+    foes: ["revenant", "brute", "hexer", "revenant", "hound", "brute"], elites: ["brute"],
+    boss: "archivist", walls: 6, chests: 2, shops: 1, altars: 1, fires: 2,
   },
 ];
 
-export const NODES_PER_FLOOR = 3;
+/* Elites hit harder than their sprite suggests, and pay for it. */
+export const ELITE = { hp: 1.4, xp: 2, gold: 2, draws: 1 };
 
-/* ---------- meta progression -------------------------------------------
+/* ---------- levelling ----------------------------------------------------
 
-   Echoes are the only thing a run leaves behind. Costs are tuned against
-   tools/deck-sim.mjs: a losing run pays about 5, a winning one about 17, so
-   the whole board is roughly eight runs of play. */
+   XP is the reward for a fight, not a card - the card comes from the level it
+   buys. That is the Dream Quest loop: kill things to grow, and the growth is
+   a draft. */
+
+export const LEVEL_XP = [0, 12, 29, 54, 88, 132, 190, 265, 360, 470];
+
+export const BOONS = [
+  { id: "vigour", name: "Vigour", desc: "+7 max HP, and heal that much.", apply: (run) => { run.maxHp += 7; run.hp += 7; } },
+  { id: "grip", name: "Wider Grip", desc: "+1 card in every hand.", apply: (run) => { run.hand += 1; } },
+  { id: "temper", name: "Temper", desc: "Start every fight with 2 of your resource.", apply: (run) => { run.startRes += 2; } },
+  { id: "purge", name: "Purge", desc: "Burn a card out of your deck for good.", pick: "burn" },
+];
+
+/* ---------- meta --------------------------------------------------------- */
 
 export const UNLOCKS = [
-  { id: "vigor", name: "Vigor", cost: 8, desc: "+8 max HP on every run." },
-  { id: "arsenal", name: "Arsenal", cost: 14, desc: "Rare cards start appearing in rewards." },
+  { id: "vigor", name: "Vigor", cost: 8, desc: "+6 max HP on every run." },
+  { id: "arsenal", name: "Arsenal", cost: 14, desc: "Rare cards start turning up in drafts and shops." },
   { id: "warden", name: "The Warden", cost: 20, desc: "Unlocks a third class: poison and thorns." },
-  { id: "honing", name: "Honing", cost: 26, desc: "Your signature starting card begins upgraded." },
-  { id: "reserve", name: "Reserve", cost: 34, desc: "Draw an extra card on the first turn of every fight." },
-  { id: "insight", name: "Foresight", cost: 44, desc: "Card rewards offer four choices instead of three." },
+  { id: "purse", name: "Deep Purse", cost: 26, desc: "Begin each run with 40 gold." },
+  { id: "grip", name: "Sure Grip", cost: 34, desc: "+1 card in your starting hand size." },
+  { id: "scout", name: "Scout", cost: 44, desc: "Each floor begins with its whole map already drawn." },
 ];
 
-export const REWARDS = {
-  fight: 1,
-  elite: 2,
-  boss: 2,
-  clear: 5,
-};
+/* Lore is what a run leaves behind: some for each floor reached, more for
+   each keeper killed. */
+export const LORE = { floor: 3, boss: 5, clear: 10 };
 
-export const HAND_SIZE = 5;
-export const MAX_ENERGY = 3;
+/* Two duellists who cannot hurt each other would stand there for ever, which
+   is a soft-lock rather than a hard fight. After this many rounds the dark
+   starts pressing on both of them, harder every round. */
+export const PATIENCE = 12;
+
+export const SHOP_CARD_PRICES = { common: 28, rare: 52 };
+export const SHOP_BURN_PRICE = 32;
+export const POTION_PRICE = 22;

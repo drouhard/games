@@ -1,226 +1,312 @@
 /* Balance simulator for Deckdelve.
 
-   The fight engine and the run state are both DOM-free, so a whole career -
-   deck choices, camps, shrines, three floors of monsters - can be played
-   thousands of times in Node. Tuning a deckbuilder by eye is hopeless: the
-   first pass of these numbers looked fine for one fight and had the Adept
-   losing 94% of runs on floor two.
+   The duel, the dungeon and the run state are all DOM-free, so a whole career
+   - walking the fog, fighting, levelling, shopping, three keepers - can be
+   played thousands of times in Node.
 
        node tools/deck-sim.mjs [runs]
 
-   What good output looks like: a fresh account clearing 35-50% of runs and a
-   fully unlocked one 45-70% (the bot plays worse than a person, so these are
-   a floor, not a ceiling); no class more than ~20 points off the others;
-   normal fights 3-5 turns and bosses 6-9; almost nobody dying on floor 1;
-   and around 18 Echoes a run against a 146-Echo unlock board, so a career is
-   roughly eight runs.
+   What good output looks like: a fresh account clearing 12-25% of runs and a
+   fully unlocked one 30-55% (the bot plays worse than a person, so those are
+   a floor, not a ceiling); no class more than ~15 points off the others;
+   duels of about 3 rounds, elites 4-6, keepers 4-7; almost nobody dying on
+   floor one; characters reaching the last keeper around level 8; and
+   stalemates at zero - a duel neither side can win is a tuning failure, not a
+   hard fight.
 
    Not part of serving the site - nothing under games/ imports it. */
 
-import { CARDS, CLASSES, FLOORS, NODES_PER_FLOOR } from "../games/deckdelve/data.js";
+import { CARDS, FLOORS } from "../games/deckdelve/data.js";
 import * as combat from "../games/deckdelve/combat.js";
+import * as dungeon from "../games/deckdelve/dungeon.js";
 import * as run from "../games/deckdelve/run.js";
 
-/* ---------- a reasonable, non-optimal player ---------------------------- */
+/* ---------- a reasonable, non-optimal duellist --------------------------- */
 
-// How much a card is worth to the pick-a-reward decision. Deliberately blunt:
-// a real player's read is better than this, so results here are a floor.
+// How much a card is worth to a draft or a shop. Deliberately blunt: a real
+// player reads synergy, so these results are a floor.
 const VALUE = {
-  bulwark: 4, cleave: 4, riposte: 3, shieldbash: 3, warcry: 5, rampart: 5,
-  secondwind: 3, colossus: 5, whirlwind: 5,
-  firebolt: 4, frostbite: 4, hex: 3, channel: 3, chainlightning: 4, siphon: 3,
-  leyline: 5, meteor: 5,
-  nettle: 3, venomspray: 4, thorncoat: 4, regrowth: 4, cull: 4, symbiosis: 3,
-  plague: 5, brambleveil: 5,
-  vault: 3, steelnerve: 2, ration: 2, prepare: 2, fury: 4, adrenaline: 2,
+  hew: 4, bulwark: 4, sidestep: 3, warcry: 4, shieldbash: 3, cleaver: 5,
+  ironskin: 3, laststand: 5, juggernaut: 5,
+  firebolt: 5, frost: 4, channel: 3, arcaneshield: 4, siphon: 4, prism: 3,
+  meteor: 5, leyline: 5,
+  nettle: 3, venomspray: 4, thorncoat: 3, regrowth: 3, cull: 4, fang: 4,
+  blight: 5, brambleveil: 4,
+  dagger: 2, buckler: 2, torch: 3, bandage: 2, whetstone: 3, tonic: 2,
 };
 
-const POWERS = new Set(["warcry", "rampart", "colossus", "leyline", "thorncoat", "regrowth", "brambleveil"]);
+const isGuard = (def) => def.effects?.some((e) => e.kind === "defense");
+const gainsRes = (def) => def.effects?.some((e) => e.kind === "res" || e.kind === "flow");
 
-function incomingDamage(state) {
-  return combat.livingEnemies(state).reduce((sum, enemy) => {
-    const intent = combat.intentPreview(enemy);
-    return intent?.kind === "attack" ? sum + intent.amount * intent.times : sum;
-  }, 0);
-}
+/* Cards are free to play, so a turn is about order, modes and whether to
+   spend the pool. Resource first, then guards (Shield Bash reads them), then
+   everything else. */
+function fightRound(state) {
+  for (let guard = 0; guard < 30; guard++) {
+    const hand = state.hand.map((card, index) => ({ card, index, def: combat.defOf(card) }));
+    if (!hand.length) break;
+    const incoming = () => Math.max(0, state.foe.attack - state.hero.defense);
+    const lethal = () => state.hero.attack - state.foe.defense >= state.foe.hp;
 
-function chooseCard(state) {
-  const hero = state.hero;
-  const foes = combat.livingEnemies(state);
-  const playable = state.hand
-    .map((card, index) => ({ card, index, def: combat.defOf(card) }))
-    .filter((c) => c.def.cost <= hero.energy);
-  if (!playable.length) return null;
+    const playable = hand.filter((c) => (c.def.cost || 0) <= state.hero.res);
+    if (!playable.length) break;
 
-  const weakest = foes.slice().sort((a, b) => a.hp + a.block - (b.hp + b.block))[0];
-  const toughest = foes.slice().sort((a, b) => b.hp - a.hp)[0];
-  const threat = Math.max(0, incomingDamage(state) - hero.block);
+    let choice = playable.find((c) => gainsRes(c.def) && !c.def.cost);
+    if (!choice && incoming() > 0 && !lethal()) choice = playable.find((c) => isGuard(c.def) && !c.def.modes);
+    if (!choice) choice = playable.find((c) => c.def.cost > 0 && state.hero.res >= c.def.cost);
+    if (!choice) choice = playable[0];
 
-  const find = (test) => playable.find(test);
-
-  // Free draw and energy first - they only ever add options.
-  const free = find((c) => c.def.cost === 0 && c.def.effects.some((e) => e.kind === "draw" || e.kind === "energy"));
-  if (free) return { ...free, target: null };
-
-  // Powers early, while there are still turns left for them to pay off.
-  if (state.turn <= 3) {
-    const power = find((c) => POWERS.has(c.card.id));
-    if (power) return { ...power, target: null };
-  }
-
-  // Debuffs land best on whatever is going to live longest.
-  const debuff = find((c) => c.def.target === "enemy" && c.def.effects.every((e) => e.kind === "status"));
-  if (debuff && toughest && !combat.stackOf(toughest, "vulnerable")) {
-    return { ...debuff, target: toughest.uid };
-  }
-
-  // Block up if the telegraphed hit would actually hurt.
-  if (threat >= 6) {
-    const guard = find((c) => c.def.effects.some((e) => e.kind === "block") && !c.def.effects.some((e) => e.kind === "damage"));
-    if (guard) return { ...guard, target: null };
-  }
-
-  const sweep = find((c) => c.def.effects.some((e) => e.kind === "damage" && e.all));
-  if (sweep && foes.length >= 2) return { ...sweep, target: null };
-
-  const attack = find((c) => c.def.effects.some((e) => e.kind === "damage"));
-  if (attack && (weakest || attack.def.target !== "enemy")) {
-    return { ...attack, target: attack.def.target === "enemy" ? weakest.uid : null };
-  }
-
-  const any = find((c) => c.def.target !== "enemy");
-  return any ? { ...any, target: null } : null;
-}
-
-function fight(state, cap = 60) {
-  let turns = 0;
-  while (!state.over && turns < cap) {
-    turns++;
-    for (let guard = 0; guard < 20 && !state.over; guard++) {
-      const choice = chooseCard(state);
-      if (!choice) break;
-      const before = state.hand.length;
-      combat.playCard(state, choice.index, choice.target);
-      if (state.hand.length === before) break; // refused - stop rather than spin
+    // Modal cards: shield up when the swing would land, otherwise hit.
+    let mode = 0;
+    if (choice.def.modes) {
+      const defensive = choice.def.modes.findIndex((m) => m.effects.some((e) => e.kind === "defense"));
+      mode = incoming() > 3 && defensive >= 0 && !lethal() ? defensive : 0;
     }
-    if (state.over) break;
-    combat.endTurn(state);
+    // Ask the engine whether the play happened. Counting the hand instead
+    // silently ends the turn on any card that draws as much as it costs.
+    if (!combat.playCard(state, choice.index, mode).length) break;
   }
-  return turns;
 }
 
-/* ---------- deck decisions ---------------------------------------------- */
-
-function takeReward(state, choices) {
-  const best = choices
-    .map((c) => ({ c, score: VALUE[c.id] || 1 }))
-    .sort((a, b) => b.score - a.score)[0];
-  // Deck thinning matters more than raw card quality: every card added is one
-  // more chance to draw filler instead of the card that wins the turn.
-  const limit = state.deck.length >= 18 ? 5 : state.deck.length >= 14 ? 4 : 2;
-  if (best.score >= limit) run.addCard(state, best.c);
+/* A duel that runs past the cap is a stalemate: nobody can punch through the
+   other's armour. It counts as a loss, and it is reported, because a game
+   full of them is a tuning failure rather than a hard fight. */
+function duel(state, cap = 30) {
+  while (!state.over && state.round <= cap) {
+    fightRound(state);
+    combat.endRound(state);
+  }
+  return { rounds: state.round, stalemate: !state.over };
 }
 
-function camp(state) {
-  if (state.hp < state.maxHp * 0.55) {
-    run.restHeal(state);
+/* ---------- walking the floor -------------------------------------------- */
+
+function path(floor, target) {
+  const key = (x, y) => `${x},${y}`;
+  const from = new Map([[key(floor.x, floor.y), null]]);
+  const queue = [[floor.x, floor.y]];
+  while (queue.length) {
+    const [x, y] = queue.shift();
+    if (x === target.x && y === target.y) {
+      const steps = [];
+      let at = key(x, y);
+      while (from.get(at)) {
+        const [px, py] = from.get(at);
+        steps.unshift(at.split(",").map(Number));
+        at = key(px, py);
+      }
+      return steps;
+    }
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const tile = dungeon.tileAt(floor, x + dx, y + dy);
+      if (!tile || !tile.known || tile.type === "wall" || from.has(key(tile.x, tile.y))) continue;
+      from.set(key(tile.x, tile.y), [x, y]);
+      queue.push([tile.x, tile.y]);
+    }
+  }
+  return null;
+}
+
+function nearest(floor, test) {
+  const options = floor.tiles.flat().filter((t) => t.known && test(t));
+  let best = null;
+  for (const tile of options) {
+    const route = path(floor, tile);
+    if (route && (!best || route.length < best.route.length)) best = { tile, route };
+  }
+  return best;
+}
+
+/* Where the bot wants to go next, in priority order. */
+function nextTarget(state, meta) {
+  const floor = state.floor;
+  const hurt = state.hp < state.maxHp * 0.5;
+  const rich = state.gold >= 30;
+
+  if (hurt) {
+    const fire = nearest(floor, (t) => t.type === "fire");
+    if (fire) return fire;
+  }
+  const shop = rich ? nearest(floor, (t) => t.type === "shop") : null;
+  if (shop) return shop;
+  const room = nearest(floor, (t) => t.type === "chest" || t.type === "altar");
+  if (room) return room;
+
+  const fightable = nearest(floor, (t) => t.type === "foe" || (t.type === "elite" && state.level >= 3));
+  if (fightable && state.hp > state.maxHp * 0.25) return fightable;
+
+  // Nothing known worth doing: push into the fog.
+  const edge = nearest(floor, (t) => t.type === "floor" &&
+    [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => {
+      const n = dungeon.tileAt(floor, t.x + dx, t.y + dy);
+      return n && !n.known;
+    }));
+  if (edge) return edge;
+
+  // Nothing left but the keeper: patch up first if there is anywhere to do it.
+  if (state.hp < state.maxHp * 0.7) {
+    const fire = nearest(floor, (t) => t.type === "fire");
+    if (fire) return fire;
+  }
+  return nearest(floor, (t) => t.type === "boss" || t.type === "stairs");
+}
+
+/* ---------- rooms -------------------------------------------------------- */
+
+function draftBest(state, ids) {
+  return ids.map((id) => ({ id, score: VALUE[id] || 1 })).sort((a, b) => b.score - a.score)[0];
+}
+
+function takeLevels(state, meta, rng, log) {
+  while (state.pendingLevels > 0) {
+    state.pendingLevels -= 1;
+    const options = run.levelOptions(state, meta, rng);
+    const cards = options.filter((o) => o.kind === "card");
+    const best = cards.length ? draftBest(state, cards.map((c) => c.id)) : null;
+    // Past sixteen cards a mediocre pick is worse than a boon.
+    const wantBoon = !best || best.score < (state.deck.length > 16 ? 4 : 3);
+    const choice = wantBoon ? options.find((o) => o.kind === "boon") : { kind: "card", id: best.id };
+    if (choice.kind === "boon" && run.boonById(choice.boon).pick === "burn") {
+      const index = state.deck.findIndex((c) => !c.upgraded && isBasic(c.id));
+      if (index >= 0 && state.deck.length > 8) run.removeCard(state, index);
+      else run.takeLevelOption(state, options.find((o) => o.kind === "card") || choice);
+    } else {
+      run.takeLevelOption(state, choice);
+    }
+    log.levels += 1;
+  }
+}
+
+const BASICS = new Set(["slash", "guard", "spark", "ward", "rake", "bark"]);
+const isBasic = (id) => BASICS.has(id);
+
+function visitRoom(state, meta, tile, rng) {
+  if (tile.type === "fire") {
+    run.restAtFire(state);
     return;
   }
-  const index = state.deck.findIndex((c) => run.canUpgrade(c) && CARDS[c.id].cost >= 1 && !CARDS[c.id].neutral);
-  if (index >= 0) run.upgradeCard(state, index);
-  else run.restHeal(state);
-}
-
-function shrine(state, meta, rng) {
-  const basics = ["strike", "guard", "bolt", "ward", "rake", "bark"];
-  const index = state.deck.findIndex((c) => basics.includes(c.id) && !c.upgraded);
-  if (state.deck.length > 10 && index >= 0) {
-    run.removeCard(state, index);
+  if (tile.type === "chest") {
+    const loot = run.chestLoot(state, meta, rng);
+    const best = draftBest(state, loot.cards);
+    if (best.score >= 4 && state.deck.length < 18) run.addCard(state, { id: best.id });
+    else state.gold += loot.gold;
     return;
   }
-  takeReward(state, run.shrineChoices(state, rng));
+  if (tile.type === "altar") {
+    const index = state.deck.findIndex((c) => isBasic(c.id) && !c.upgraded);
+    if (state.deck.length > 9 && index >= 0) run.removeCard(state, index);
+    else {
+      const up = state.deck.findIndex((c) => run.canUpgrade(c) && !isBasic(c.id));
+      run.upgradeCard(state, up >= 0 ? up : Math.max(0, state.deck.findIndex((c) => run.canUpgrade(c))));
+    }
+    return;
+  }
+  if (tile.type === "shop") {
+    const stock = run.shopStock(state, meta, rng);
+    if (state.hp < state.maxHp * 0.6 && run.spend(state, stock.potion)) state.potions += 1;
+    for (const item of stock.cards.slice().sort((a, b) => (VALUE[b.id] || 1) - (VALUE[a.id] || 1))) {
+      if ((VALUE[item.id] || 1) >= 4 && run.spend(state, item.price)) run.addCard(state, { id: item.id });
+    }
+    const index = state.deck.findIndex((c) => isBasic(c.id) && !c.upgraded);
+    if (state.deck.length > 12 && index >= 0 && run.spend(state, stock.burn)) run.removeCard(state, index);
+  }
 }
 
-/* ---------- one full run ------------------------------------------------ */
+/* ---------- one run ------------------------------------------------------ */
 
 function playRun(classId, meta, rng = Math.random) {
-  const state = run.newRun(classId, meta);
-  const cls = run.classById(classId);
-  const turnsByKind = [];
+  const state = run.newRun(classId, meta, rng);
+  const log = { levels: 0, duels: [], steps: 0, deathFloor: null, stalemates: 0 };
 
-  while (!state.over) {
-    const options = run.rollOptions(state, rng);
-    // Prefer the fight when healthy, the camp when not.
-    const wantsRest = state.hp < state.maxHp * 0.5;
-    const node = options.length === 1
-      ? options[0]
-      : options.find((o) => (wantsRest ? o.type === "rest" : o.type !== "rest")) || options[0];
+  for (let guard = 0; !state.over && guard < 900; guard++) {
+    const floor = state.floor;
+    const target = nextTarget(state, meta);
+    if (!target) { run.loseRun(state); log.deathFloor = state.floorIndex; break; }
 
-    if (node.type === "rest") camp(state);
-    else if (node.type === "shrine") shrine(state, meta, rng);
-    else {
-      const fightState = combat.startCombat({
-        hero: { name: cls.name, sprite: cls.sprite, hp: state.hp, maxHp: state.maxHp, maxEnergy: state.energy },
-        deck: state.deck,
-        enemies: node.enemies,
-        rng,
-        extraDraw: run.hasUnlock(meta, "reserve") ? 1 : 0,
-      });
-      const turns = fight(fightState);
-      const lost = state.hp - fightState.hero.hp;
-      state.hp = fightState.hero.hp;
-
-      if (fightState.over !== "victory") {
-        run.loseRun(state);
-        return { state, turnsByKind, deathFloor: state.floor, deathNode: node.type };
-      }
-      turnsByKind.push({ kind: node.type, floor: state.floor, turns, lost });
-      run.winFight(state, node.type);
-      takeReward(state, run.rewardChoices(state, meta, rng));
+    // An empty route means the bot is already standing on what it wanted.
+    if (!target.route.length) {
+      resolveTile(state, meta, floor, target.tile, rng, log);
+      continue;
     }
-    run.advance(state);
+    for (const [x, y] of target.route) {
+      const tile = dungeon.tileAt(floor, x, y);
+      dungeon.step(floor, tile);
+      log.steps += 1;
+      if (tile === target.tile) {
+        resolveTile(state, meta, floor, tile, rng, log);
+        break;
+      }
+    }
   }
-  return { state, turnsByKind };
+  if (!state.over) { run.loseRun(state); log.deathFloor = state.floorIndex; log.stuck = true; }
+  return { state, log };
 }
 
-/* ---------- report ------------------------------------------------------ */
+/* Whatever the tile turns out to be, dealt with in place. */
+function resolveTile(state, meta, floor, tile, rng, log) {
+  if (tile.type === "foe" || tile.type === "elite" || tile.type === "boss") {
+    const spec = dungeon.foeFor(tile, rng);
+    const foe = combat.makeFoe(spec.key, spec);
+    const fight = combat.startCombat({ hero: run.heroFor(state), deck: state.deck, foe, rng });
+    const { rounds, stalemate } = duel(fight);
+    state.hp = fight.hero.hp;
+    if (stalemate) log.stalemates += 1;
+    if (fight.over !== "win") {
+      run.loseRun(state);
+      log.deathFloor = state.floorIndex;
+      log.deathTo = foe.name;
+      return;
+    }
+    log.duels.push({ kind: tile.type, floor: state.floorIndex, rounds });
+    run.grantKill(state, foe);
+    takeLevels(state, meta, rng, log);
+    dungeon.clearTile(floor, tile);
+    if (state.potions && state.hp < state.maxHp * 0.4) run.drinkPotion(state);
+    return;
+  }
+  if (tile.type === "stairs") {
+    run.descend(state, meta, rng);
+    return;
+  }
+  if (tile.type === "floor") return; // an exploration step, nothing to do
+  visitRoom(state, meta, tile, rng);
+  dungeon.clearTile(floor, tile);
+}
 
-const N = Number(process.argv[2]) || 400;
-const fullMeta = { ...run.newMeta(), unlocked: ["vigor", "arsenal", "warden", "honing", "reserve", "insight"] };
+/* ---------- report ------------------------------------------------------- */
 
-for (const meta of [{ label: "fresh account (no unlocks)", meta: run.newMeta() },
-                    { label: "everything unlocked", meta: fullMeta }]) {
-  console.log(`\n=== ${meta.label} ===`);
-  console.log("class      cleared   avg floor   echoes   deck   deaths by floor");
+const N = Number(process.argv[2]) || 300;
+const full = { ...run.newMeta(), unlocked: ["vigor", "arsenal", "warden", "purse", "grip", "scout"] };
 
-  for (const cls of CLASSES) {
-    if (run.classIsLocked(cls, meta.meta)) continue;
-    let cleared = 0, echoes = 0, floors = 0, deck = 0;
+for (const account of [{ label: "fresh account (no unlocks)", meta: run.newMeta() },
+                       { label: "everything unlocked", meta: full }]) {
+  console.log(`\n=== ${account.label} ===`);
+  console.log("class    cleared  avg floor  level  deck  lore   deaths f1/f2/f3   rounds foe/elite/boss");
+
+  for (const cls of [{ id: "knight", name: "Knight" }, { id: "adept", name: "Adept" }, { id: "warden", name: "Warden" }]) {
+    if (cls.id === "warden" && !run.hasUnlock(account.meta, "warden")) continue;
+    let cleared = 0, floors = 0, levels = 0, deck = 0, lore = 0, stale = 0;
     const deaths = [0, 0, 0];
-    const turns = { fight: [], elite: [], boss: [] };
-    const lost = { fight: [], elite: [], boss: [] };
+    const rounds = { foe: [], elite: [], boss: [] };
 
     for (let i = 0; i < N; i++) {
-      const result = playRun(cls.id, meta.meta, Math.random);
-      const state = result.state;
+      const { state, log } = playRun(cls.id, account.meta, Math.random);
       if (state.over === "cleared") cleared++;
-      else deaths[Math.min(2, state.floor)]++;
-      echoes += state.echoes;
-      floors += state.floor + state.node / (NODES_PER_FLOOR + 1);
+      else deaths[Math.min(2, log.deathFloor ?? state.floorIndex)]++;
+      floors += state.floorIndex + 1;
+      levels += state.level;
       deck += state.deck.length;
-      for (const entry of result.turnsByKind) {
-        (turns[entry.kind] ||= []).push(entry.turns);
-        (lost[entry.kind] ||= []).push(entry.lost);
-      }
+      lore += state.lore;
+      stale += log.stalemates;
+      for (const d of log.duels) rounds[d.kind === "elite" ? "elite" : d.kind === "boss" ? "boss" : "foe"].push(d.rounds);
     }
-
     const avg = (list) => (list.length ? (list.reduce((a, b) => a + b, 0) / list.length).toFixed(1) : "-");
     console.log(
-      `${cls.name.padEnd(10)} ${String(Math.round(cleared / N * 100)).padStart(4)}%   ` +
-      `${(floors / N).toFixed(2).padStart(9)}   ${(echoes / N).toFixed(1).padStart(6)}   ` +
-      `${(deck / N).toFixed(1).padStart(4)}   ${deaths.join(" / ")}` +
-      `   turns ${avg(turns.fight)}/${avg(turns.elite)}/${avg(turns.boss)}` +
-      `   hp lost ${avg(lost.fight)}/${avg(lost.elite)}/${avg(lost.boss)}`
+      `${cls.name.padEnd(8)} ${String(Math.round(cleared / N * 100)).padStart(4)}%  ` +
+      `${(floors / N).toFixed(2).padStart(9)}  ${(levels / N).toFixed(1).padStart(5)}  ` +
+      `${(deck / N).toFixed(1).padStart(4)}  ${(lore / N).toFixed(1).padStart(4)}   ` +
+      `${deaths.join(" / ").padEnd(16)} ${avg(rounds.foe)}/${avg(rounds.elite)}/${avg(rounds.boss)}` +
+      `   stalemates ${(stale / N).toFixed(2)}`
     );
   }
 }

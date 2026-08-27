@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#12121c">
+  <title>Wildermark</title>
+
+  <link rel="manifest" href="../../shared/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Wildermark">
+  <link rel="apple-touch-icon" href="../../shared/icons/icon-180.png">
+  <link rel="icon" href="../../shared/icons/icon-192.png">
+
+  <link rel="stylesheet" href="../../shared/base.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+
+    <!-- ---------- title ---------- -->
+    <section class="screen is-active" data-screen="title">
+      <div class="title-block">
+        <h1 class="logo">WILDER<span>MARK</span></h1>
+        <p class="tagline">Five wardens. One deck. Your life does not reset.</p>
+        <div class="title-art" id="title-art" aria-hidden="true"></div>
+      </div>
+      <div class="title-menu">
+        <button class="rune-button rune-button--go" id="btn-continue" type="button" hidden>Continue</button>
+        <button class="rune-button" id="btn-new" type="button">New Journey</button>
+        <button class="rune-button" id="btn-how" type="button">How to Play</button>
+      </div>
+      <a class="link-back" href="../../">‹ All games</a>
+    </section>
+
+    <!-- ---------- pick your colours ---------- -->
+    <section class="screen" data-screen="setup">
+      <header class="bar">
+        <button class="icon-button" data-back="title" type="button" aria-label="Title screen">‹</button>
+        <span class="bar__title">Where you drew your first mana</span>
+      </header>
+      <div class="scroller">
+        <p class="blurb" id="setup-note">Pick the colour you know best. The pile you arrive with will mostly be that, with a splash of the second.</p>
+        <div class="color-grid" id="setup-main"></div>
+        <p class="blurb blurb--tight">And the splash:</p>
+        <div class="color-grid" id="setup-splash"></div>
+      </div>
+      <div class="foot">
+        <button class="rune-button rune-button--go" id="btn-begin" type="button">Walk into the Wildermark</button>
+      </div>
+    </section>
+
+    <!-- ---------- the overworld ---------- -->
+    <section class="screen" data-screen="map">
+      <header class="hud">
+        <span class="hud__stat hud__stat--life" id="hud-life" title="Life">♥ <b>16</b><i>/16</i></span>
+        <span class="hud__stat" id="hud-gold" title="Gold">◎ <b>60</b></span>
+        <span class="hud__sigils" id="hud-sigils"></span>
+        <button class="icon-button" id="btn-journal" type="button" aria-label="Journal">☰</button>
+      </header>
+
+      <div class="map-wrap">
+        <canvas id="map" width="360" height="360"></canvas>
+        <p class="map-place" id="map-place"></p>
+      </div>
+
+      <p class="log" id="map-log" aria-live="polite"></p>
+
+      <div class="map-foot">
+        <div class="dpad" id="dpad">
+          <button type="button" data-dir="-1,-1" aria-label="Up left">◤</button>
+          <button type="button" data-dir="0,-1" aria-label="Up">▲</button>
+          <button type="button" data-dir="1,-1" aria-label="Up right">◥</button>
+          <button type="button" data-dir="-1,0" aria-label="Left">◀</button>
+          <button type="button" class="dpad__here" data-dir="0,0" aria-label="Look here">◉</button>
+          <button type="button" data-dir="1,0" aria-label="Right">▶</button>
+          <button type="button" data-dir="-1,1" aria-label="Down left">◣</button>
+          <button type="button" data-dir="0,1" aria-label="Down">▼</button>
+          <button type="button" data-dir="1,1" aria-label="Down right">◢</button>
+        </div>
+        <div class="map-actions">
+          <button class="chip-button" id="btn-deck" type="button">Deck <b id="deck-count">26</b></button>
+          <button class="chip-button" id="btn-wild" type="button">Wildmagic</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- the deck builder ---------- -->
+    <section class="screen" data-screen="deck">
+      <header class="bar">
+        <button class="icon-button" data-back="map" type="button" aria-label="Back">‹</button>
+        <span class="bar__title">Your deck</span>
+        <span class="bar__meta" id="deck-meta"></span>
+      </header>
+      <div class="deck-tabs">
+        <button class="tab is-on" data-tab="deck" type="button">In the deck</button>
+        <button class="tab" data-tab="rest" type="button">Satchel</button>
+      </div>
+      <p class="deck-warn" id="deck-warn"></p>
+      <div class="scroller" id="deck-list"></div>
+      <div class="foot foot--split">
+        <span class="curve" id="deck-curve"></span>
+        <button class="rune-button rune-button--go" id="btn-deck-done" type="button">Done</button>
+      </div>
+    </section>
+
+    <!-- ---------- a duel ---------- -->
+    <section class="screen" data-screen="duel">
+      <div class="side side--foe">
+        <div class="portrait" id="foe-portrait"></div>
+        <div class="side__info">
+          <p class="side__name" id="foe-name">—</p>
+          <p class="side__stats"><span class="life" id="foe-life">0</span><span class="pip" id="foe-hand">✋0</span><span class="pip" id="foe-deck">⌸0</span></p>
+          <div class="mana-row" id="foe-mana"></div>
+        </div>
+      </div>
+
+      <div class="board" id="foe-board"></div>
+      <div class="board board--mine" id="my-board"></div>
+
+      <p class="duel-log" id="duel-log" aria-live="polite"></p>
+
+      <div class="side side--mine">
+        <div class="side__info">
+          <p class="side__stats"><span class="life" id="my-life">0</span><span class="pip" id="my-deck">⌸0</span></p>
+          <div class="mana-row" id="my-mana"></div>
+        </div>
+        <div class="portrait portrait--small" id="my-portrait"></div>
+      </div>
+
+      <div class="hand" id="hand"></div>
+
+      <div class="duel-actions" id="duel-actions"></div>
+
+      <div class="banner" id="duel-banner" hidden></div>
+    </section>
+
+    <!-- ---------- a dungeon ---------- -->
+    <section class="screen" data-screen="dungeon">
+      <header class="bar">
+        <span class="bar__title" id="dungeon-name">Barrowmaw</span>
+        <span class="bar__meta" id="dungeon-room"></span>
+      </header>
+      <div class="scroller">
+        <div class="rooms" id="dungeon-rooms"></div>
+        <p class="blurb" id="dungeon-note"></p>
+        <p class="blurb" id="dungeon-prize"></p>
+        <div class="delve-art" id="dungeon-art" aria-hidden="true"></div>
+      </div>
+      <div class="foot foot--split">
+        <button class="rune-button" id="btn-dungeon-leave" type="button">Climb out</button>
+        <button class="chip-button" id="btn-dungeon-deck" type="button">Deck</button>
+        <button class="rune-button rune-button--go" id="btn-dungeon-next" type="button">Open the door</button>
+      </div>
+    </section>
+
+    <!-- ---------- the end ---------- -->
+    <section class="screen" data-screen="end">
+      <div class="title-block">
+        <h1 class="logo" id="end-title">THE SPIRE FALLS</h1>
+        <p class="tagline" id="end-note"></p>
+        <div class="title-art" id="end-art" aria-hidden="true"></div>
+      </div>
+      <div class="title-menu">
+        <button class="rune-button rune-button--go" id="btn-end-new" type="button">Another journey</button>
+        <a class="link-back" href="../../">‹ All games</a>
+      </div>
+    </section>
+
+  </div>
+
+  <div class="overlay" id="overlay" hidden>
+    <div class="panel" id="panel"></div>
+  </div>
+
+  <script type="module" src="game.js"></script>
+</body>
+</html>

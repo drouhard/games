@@ -17,6 +17,7 @@ shared/manifest.json    web app manifest (Add to Home Screen)
 shared/icons/           app icons
 games/memory/           one folder per game, fully self-contained
 tools/make-icons.py     regenerates the icons; not part of serving the site
+tools/wild-sim.mjs      balance simulator for Wildermark
 tools/deck-sim.mjs      balance simulator for Deckdelve
 tools/balance-sim.mjs   balance simulator for Emberdeep
 tools/climb-sim.mjs     balance simulator for Stickclimb
@@ -40,6 +41,59 @@ not at the domain root, so a leading `/` in an `href` or `src` would 404.
 4. Merge to `main` — that publishes it.
 
 ## Games
+
+### Wildermark
+
+A card-game RPG on the shape of MicroProse's *Shandalar*: an overworld with
+towns and dungeons and monsters walking around on it, and a real trading-card
+duel every time you meet one.
+
+The rule the whole game hangs off is the one that made Shandalar what it is —
+**your life total does not reset between duels**. Damage you take out in the
+crags is still gone when the next thing finds you. It comes back slowly on
+foot, or all at once for coin at an inn, and deciding how far to push before
+you turn back is the entire overworld.
+
+Five colours, five landscapes, five wardens: Sun holds ground and gains life,
+Tide flies and bounces, Rot drains and decays, Ember burns, Bramble lands the
+biggest bodies early. Each colour owns a region of the map and a keep at the
+far end of it, and — the other Shandalar idea — every creature of a colour you
+put down out in the world takes two life off that colour's warden before you
+ever knock on its door. A warden you have hunted properly opens on 12 instead
+of 23. Beat all five and the Spire opens.
+
+Duels are Magic-shaped and cut to fit a phone: one land a turn, coloured mana
+with pips, creatures that arrive tired, an attack step where the defender
+assigns blocks, and one window for combat tricks. There is deliberately no
+mana pool — a spell taps the lands it needs at the moment you cast it, so mana
+can never be floating and lost — and no priority ping-pong: instants exist as
+`reflex` cards, castable only while blockers are being declared.
+
+Every duel is played for ante. Win and you take a card off the loser; lose and
+you lose a spare of yours, or gold if you have no spare. That "spare" is doing
+real work: staking a card you own only one of used to dismantle the deck a
+card at a time over a run of bad duels, and nothing you won ever caught up.
+You can also waive your winnings for coin and a rumour about where a dungeon
+is.
+
+Gold buys cards from town markets, nights at an inn, and **leylines** — two
+points of maximum life each, forever, getting dearer every time. Quests,
+shrines and the bottoms of dungeons pay **sigils**, and two sigils of a colour
+teach you that colour's **wildmagic**: Sanctuary heals you free on walking
+into a town, Tidewalk steps you to any town you have seen, Grave Tithe pays
+your ante in gold, Emberstride freezes everything on the map, Wildpaths makes
+rough ground cost nothing.
+
+Losing takes the stake and a walk home and nothing else — you wake at the
+nearest town on full life. Backing out of a fight costs coin, never health.
+Both of those are the same rule: a retry has to be at least as survivable as
+the fight that beat you.
+
+`tools/wild-sim.mjs` plays whole careers in Node — walking, hunting, shopping,
+binding leylines, delving, and kicking in keep doors — because the duel, the
+map and the career are all DOM-free. Over 400 careers the bot wins about 70%
+of roadside duels, 37% in the deep country, 32% against a warden, and sweeps
+the whole plane one career in five. It plays worse than a person does.
 
 ### Brinewright
 

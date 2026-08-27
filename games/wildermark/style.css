@@ -1,0 +1,402 @@
+/* Wildermark.
+
+   Two layouts, one stylesheet. Everything is a flex column that owns the
+   screen height, and the only thing allowed to scroll is a `.scroller` -
+   the map and the duel never do, in portrait or landscape.
+
+   The duel screen is the hard one: five stacked bands (their side, their
+   board, your board, your side, your hand) plus an action bar. The boards
+   flex and the bands around them are fixed, so a short phone squeezes the
+   creature rows rather than pushing the hand off the bottom. */
+
+:root {
+  --ink: #12121c;
+  --ink-2: #1b1b2b;
+  --slab: #23233a;
+  --slab-lit: #313150;
+  --edge: #3d3d5c;
+  --paper: #e8e6df;
+  --dim: #9a9ab8;
+  --sun: #ffd66b;
+  --tide: #56b0f0;
+  --rot: #b98ee0;
+  --ember: #ff8b4a;
+  --bramble: #6fcf6a;
+  --good: #6fcf6a;
+  --bad: #e2564a;
+  --r: 12px;
+}
+
+body {
+  background: var(--ink);
+  color: var(--paper);
+  font-family: ui-rounded, "Avenir Next", -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.sprite {
+  image-rendering: pixelated;
+  display: block;
+}
+
+/* ---------- screens ------------------------------------------------------ */
+
+.screen {
+  display: none;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  gap: 0.4rem;
+  padding: 0.5rem 0.6rem 0.6rem;
+}
+
+.screen.is-active { display: flex; }
+
+.scroller {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-bottom: 0.3rem;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: none;
+}
+
+.bar__title { font-weight: 700; font-size: 1rem; flex: 1; }
+.bar__meta { color: var(--dim); font-size: 0.8rem; }
+
+.foot { flex: none; display: flex; justify-content: center; padding-top: 0.2rem; }
+.foot--split { justify-content: space-between; align-items: center; gap: 0.5rem; }
+
+.blurb { margin: 0; color: var(--dim); font-size: 0.85rem; line-height: 1.4; }
+.blurb--tight { margin-top: 0.2rem; }
+
+.rune-button {
+  padding: 0.7rem 1.2rem;
+  border-radius: 999px;
+  background: var(--slab);
+  border: 1px solid var(--edge);
+  font-weight: 700;
+  font-size: 0.9rem;
+  transition: transform 0.08s ease, filter 0.15s ease;
+}
+.rune-button:active { transform: scale(0.96); filter: brightness(1.25); }
+.rune-button--go { background: #4a3c86; border-color: #6a58b8; }
+.rune-button[disabled] { opacity: 0.4; }
+
+.chip-button {
+  padding: 0.45rem 0.7rem;
+  border-radius: 999px;
+  background: var(--slab);
+  border: 1px solid var(--edge);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+.chip-button:active { background: var(--slab-lit); }
+.chip-button b { color: var(--sun); }
+
+/* ---------- title -------------------------------------------------------- */
+
+.title-block { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.4rem; min-height: 0; }
+.logo { margin: 0; font-size: clamp(1.9rem, 9vw, 3rem); letter-spacing: 0.12em; font-weight: 800; }
+.logo span { color: var(--rot); }
+.tagline { margin: 0; color: var(--dim); font-size: 0.85rem; text-align: center; }
+.title-art { display: flex; gap: 0.3rem; align-items: flex-end; margin-top: 0.6rem; flex-wrap: wrap; justify-content: center; }
+.title-art .sprite { width: 48px; height: 48px; }
+.title-menu { flex: none; display: flex; flex-direction: column; gap: 0.5rem; align-items: center; padding-bottom: 0.4rem; }
+.link-back { color: var(--dim); font-size: 0.8rem; text-align: center; padding: 0.4rem; }
+
+.color-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 0.4rem; }
+.color-pick {
+  display: flex; align-items: center; gap: 0.45rem;
+  padding: 0.6rem; border-radius: var(--r);
+  background: var(--slab); border: 2px solid transparent; text-align: left;
+}
+.color-pick.is-on { border-color: currentColor; background: var(--slab-lit); }
+.color-pick i { font-style: normal; font-size: 1.2rem; }
+.color-pick span { font-size: 0.8rem; color: var(--paper); }
+.color-pick small { display: block; color: var(--dim); font-size: 0.68rem; }
+
+/* ---------- overworld ---------------------------------------------------- */
+
+.hud { display: flex; align-items: center; gap: 0.45rem; flex: none; }
+.hud__stat { font-size: 0.85rem; background: var(--slab); padding: 0.3rem 0.55rem; border-radius: 999px; }
+.hud__stat b { font-weight: 700; }
+.hud__stat i { font-style: normal; color: var(--dim); font-size: 0.75rem; }
+.hud__stat--life { color: var(--bad); }
+.hud__stat--life b { color: var(--paper); }
+.hud__sigils { flex: 1; display: flex; gap: 0.2rem; font-size: 0.8rem; overflow: hidden; }
+.hud__sigils span { opacity: 0.35; }
+.hud__sigils span.has { opacity: 1; }
+
+.map-wrap { flex: 1; min-height: 0; position: relative; display: flex; align-items: center; justify-content: center; }
+#map { image-rendering: pixelated; border-radius: var(--r); max-width: 100%; max-height: 100%; touch-action: manipulation; }
+.map-place {
+  position: absolute; top: 0.4rem; left: 50%; transform: translateX(-50%);
+  margin: 0; padding: 0.2rem 0.6rem; border-radius: 999px;
+  background: rgba(18, 18, 28, 0.8); font-size: 0.72rem; color: var(--dim);
+  pointer-events: none; white-space: nowrap;
+}
+
+.log { flex: none; margin: 0; min-height: 1.1rem; font-size: 0.76rem; color: var(--dim); text-align: center; }
+.log.good { color: var(--good); }
+.log.bad { color: var(--bad); }
+
+.map-foot { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
+.dpad { display: grid; grid-template-columns: repeat(3, 34px); grid-auto-rows: 34px; gap: 3px; }
+.dpad button {
+  background: var(--slab); border-radius: 8px; font-size: 0.7rem; color: var(--dim);
+  display: grid; place-items: center;
+}
+.dpad button:active { background: var(--slab-lit); color: var(--paper); }
+.dpad__here { color: var(--sun) !important; }
+.map-actions { display: flex; flex-direction: column; gap: 0.35rem; align-items: stretch; }
+
+/* ---------- cards -------------------------------------------------------- */
+
+.card {
+  position: relative; flex: none;
+  width: 74px; height: 98px;
+  border-radius: 9px; padding: 0.25rem;
+  background: linear-gradient(160deg, var(--slab), var(--ink-2));
+  border: 1px solid var(--edge);
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  transition: transform 0.1s ease;
+}
+.card.is-on { transform: translateY(-8px); border-color: var(--sun); }
+.card.is-dead { opacity: 0.45; }
+.card__name {
+  font-size: 0.52rem; line-height: 1.08; text-align: center; width: 100%;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.card .sprite { width: 38px; height: 38px; }
+.card__foot {
+  margin-top: auto; width: 100%;
+  display: flex; align-items: center; justify-content: space-between; gap: 2px;
+}
+.card__cost {
+  background: var(--ink); border-radius: 6px; padding: 0 4px;
+  font-size: 0.58rem; font-weight: 800; white-space: nowrap;
+}
+.card__pt { font-size: 0.58rem; font-weight: 700; color: var(--dim); }
+.card--sun .card__pt, .card--tide .card__pt, .card--rot .card__pt,
+.card--ember .card__pt, .card--bramble .card__pt, .card--relic .card__pt { color: var(--paper); }
+.card__tag { font-size: 0.48rem; color: var(--dim); text-align: center; line-height: 1; }
+.card--sun { border-color: #6b5a2b; }
+.card--tide { border-color: #2a5a86; }
+.card--rot { border-color: #5a3a7a; }
+.card--ember { border-color: #7a3a24; }
+.card--bramble { border-color: #2f6a45; }
+
+
+.hand {
+  flex: none; display: flex; gap: 0.3rem; overflow-x: auto; overflow-y: hidden;
+  -webkit-overflow-scrolling: touch; padding: 0.5rem 0.1rem 0.2rem; min-height: 112px;
+}
+.hand:empty { min-height: 0; padding: 0; }
+
+/* ---------- duel --------------------------------------------------------- */
+
+[data-screen="duel"] { gap: 0.25rem; padding: 0.4rem 0.5rem 0.5rem; }
+
+.side { flex: none; display: flex; align-items: center; gap: 0.5rem; }
+.side--mine { flex-direction: row; }
+.side__info { flex: 1; min-width: 0; }
+.side__name { margin: 0; font-size: 0.82rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.side__stats { margin: 0; display: flex; gap: 0.35rem; align-items: center; font-size: 0.75rem; }
+.life {
+  font-weight: 800; font-size: 0.95rem; background: var(--ink-2);
+  border-radius: 999px; padding: 0.1rem 0.5rem; border: 1px solid var(--edge);
+}
+.life::before { content: "♥ "; color: var(--bad); }
+.pip { color: var(--dim); font-size: 0.7rem; }
+.portrait { width: 46px; height: 46px; flex: none; display: grid; place-items: center; background: var(--slab); border-radius: 10px; }
+.portrait .sprite { width: 40px; height: 40px; }
+.portrait--small { width: 40px; height: 40px; }
+.portrait--small .sprite { width: 34px; height: 34px; }
+
+.mana-row { display: flex; gap: 2px; flex-wrap: wrap; margin-top: 2px; }
+.mana {
+  width: 13px; height: 13px; border-radius: 50%;
+  border: 1px solid var(--edge); background: var(--ink-2);
+}
+.mana.is-open { box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25) inset; }
+.mana.is-spent { opacity: 0.3; }
+
+.board {
+  /* The two tables absorb whatever height is spare, so a tall phone gets a
+     roomy board rather than a void between the log and the hand. */
+  flex: 1 1 auto; min-height: 62px; max-height: 210px; justify-content: center;
+  display: flex; gap: 0.3rem; align-items: center;
+  overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch;
+  padding: 0.2rem; border-radius: var(--r);
+  background: rgba(255, 255, 255, 0.03);
+}
+.board--mine { background: rgba(120, 100, 200, 0.09); }
+.board:empty::after { content: "empty"; color: var(--dim); font-size: 0.7rem; margin: auto; }
+
+.unit {
+  position: relative; flex: none; width: 52px;
+  border-radius: 9px; padding: 2px; background: var(--slab);
+  border: 1px solid var(--edge);
+  display: flex; flex-direction: column; align-items: center;
+}
+.unit .sprite { width: 34px; height: 34px; }
+.unit__pt { font-size: 0.6rem; font-weight: 800; }
+.unit__kw { font-size: 0.48rem; color: var(--dim); line-height: 1; height: 0.5rem; overflow: hidden; }
+.unit.is-tapped { transform: rotate(9deg); opacity: 0.65; }
+.unit.is-sick .sprite { opacity: 0.6; }
+.unit.is-attacking { border-color: var(--ember); box-shadow: 0 0 0 2px rgba(255, 139, 74, 0.35); }
+.unit.is-blocking { border-color: var(--tide); box-shadow: 0 0 0 2px rgba(86, 176, 240, 0.35); }
+.unit.is-target { border-color: var(--sun); animation: pulse 0.9s infinite; }
+.unit.is-picked { border-color: var(--sun); box-shadow: 0 0 0 2px rgba(255, 214, 107, 0.4); }
+.unit__badge {
+  position: absolute; top: -6px; left: -3px; font-size: 0.5rem;
+  background: var(--ember); color: var(--ink); border-radius: 999px; padding: 0 3px; font-weight: 800;
+}
+
+@keyframes pulse { 50% { box-shadow: 0 0 0 4px rgba(255, 214, 107, 0.25); } }
+
+.duel-log { flex: none; margin: 0; min-height: 1.15rem; font-size: 0.72rem; color: var(--dim); text-align: center; }
+.duel-log.good { color: var(--good); }
+.duel-log.bad { color: var(--bad); }
+
+.duel-actions { flex: none; display: flex; gap: 0.4rem; justify-content: center; flex-wrap: wrap; }
+
+.banner {
+  position: absolute; left: 0; right: 0; top: 44%;
+  text-align: center; font-size: 1.1rem; font-weight: 800;
+  color: var(--sun); text-shadow: 0 2px 12px rgba(0, 0, 0, 0.9);
+  pointer-events: none;
+}
+
+/* Targets on the face rather than a creature. */
+.side.is-target { outline: 2px solid var(--sun); outline-offset: 2px; border-radius: var(--r); animation: pulse 0.9s infinite; }
+
+/* ---------- deck builder -------------------------------------------------- */
+
+.deck-tabs { flex: none; display: flex; gap: 0.3rem; }
+.tab { flex: 1; padding: 0.45rem; border-radius: 9px; background: var(--slab); font-size: 0.78rem; color: var(--dim); }
+.tab.is-on { background: var(--slab-lit); color: var(--paper); font-weight: 700; }
+.deck-warn { flex: none; margin: 0; min-height: 0.9rem; font-size: 0.72rem; color: var(--bad); }
+.curve { font-size: 0.7rem; color: var(--dim); }
+
+.row {
+  display: grid; grid-template-columns: 34px 1fr auto auto;
+  align-items: center; gap: 0.5rem;
+  padding: 0.35rem 0.5rem; border-radius: 9px; background: var(--slab);
+}
+.row .sprite { width: 30px; height: 30px; }
+.row__name { font-size: 0.8rem; font-weight: 600; }
+.row__text { font-size: 0.63rem; color: var(--dim); line-height: 1.25; }
+.row__count { font-size: 0.8rem; font-weight: 800; min-width: 1.4rem; text-align: center; }
+.row__btns { display: flex; gap: 0.25rem; }
+.row__btns button {
+  width: 30px; height: 30px; border-radius: 8px; background: var(--slab-lit);
+  display: grid; place-items: center; font-size: 0.95rem; font-weight: 700;
+}
+.row__btns button:active { filter: brightness(1.3); }
+
+/* ---------- dungeon ------------------------------------------------------- */
+
+.rooms { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.room {
+  flex: 1 1 66px; min-width: 66px; padding: 0.4rem; border-radius: var(--r);
+  background: var(--slab); text-align: center; font-size: 0.62rem; color: var(--dim);
+}
+.room .sprite { width: 36px; height: 36px; margin: 0 auto 2px; }
+.room.is-done { opacity: 0.4; }
+.room.is-now { background: var(--slab-lit); color: var(--paper); border: 1px solid var(--sun); }
+.delve-art { flex: 1; min-height: 0; display: grid; place-items: center; opacity: 0.5; }
+.delve-art .sprite { width: 96px; height: 96px; }
+@media (orientation: landscape) and (max-height: 500px) { .delve-art { display: none; } }
+
+/* ---------- overlay panel ------------------------------------------------- */
+
+.overlay {
+  position: fixed; inset: 0; z-index: 20;
+  background: rgba(8, 8, 14, 0.78);
+  display: flex; align-items: flex-end; justify-content: center;
+  padding: env(safe-area-inset-top) 0.5rem calc(env(safe-area-inset-bottom) + 0.5rem);
+}
+.panel {
+  width: 100%; max-width: 460px; max-height: 88%;
+  overflow-y: auto; -webkit-overflow-scrolling: touch;
+  background: var(--ink-2); border: 1px solid var(--edge);
+  border-radius: 18px; padding: 0.9rem;
+  display: flex; flex-direction: column; gap: 0.55rem;
+}
+.panel h2 { margin: 0; font-size: 1.05rem; }
+.panel h3 { margin: 0.4rem 0 0; font-size: 0.82rem; color: var(--dim); font-weight: 600; }
+.panel p { margin: 0; font-size: 0.8rem; line-height: 1.4; color: var(--dim); }
+.panel p.lead { color: var(--paper); }
+.panel .rune-button { width: 100%; }
+.panel-row { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.panel-row .rune-button { width: auto; flex: 1 1 40%; }
+.shelf { display: flex; gap: 0.35rem; overflow-x: auto; padding-bottom: 0.2rem; }
+.kv { display: flex; justify-content: space-between; font-size: 0.78rem; }
+.kv b { font-weight: 700; }
+.tick { color: var(--good); }
+.cross { color: var(--dim); }
+
+/* Landscape phones. A 390-tall viewport has to hold seven bands and an action
+   bar, so everything loses a few pixels rather than the bottom row falling off
+   the screen - which is what "must fit portrait and landscape with no
+   scrolling" actually costs. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .logo { font-size: 1.5rem; }
+  .tagline { font-size: 0.75rem; }
+  .title-art .sprite { width: 32px; height: 32px; }
+  .title-menu { gap: 0.35rem; }
+  .rune-button { padding: 0.45rem 0.95rem; font-size: 0.8rem; }
+  .dpad { grid-template-columns: repeat(3, 30px); grid-auto-rows: 28px; }
+
+  [data-screen="duel"] { gap: 0.2rem; padding: 0.3rem 0.5rem 0.35rem; }
+  .card { width: 58px; height: 74px; padding: 0.15rem; }
+  .card .sprite { width: 26px; height: 26px; }
+  .card__name { font-size: 0.48rem; }
+  .card__cost, .card__pt { font-size: 0.52rem; }
+  .card__tag { display: none; }
+  .hand { min-height: 82px; padding: 0.25rem 0.1rem 0.1rem; }
+  .board { min-height: 48px; max-height: 96px; }
+  .unit { width: 42px; }
+  .unit .sprite { width: 26px; height: 26px; }
+  .unit__pt { font-size: 0.55rem; }
+  .unit__kw { font-size: 0.44rem; }
+  .portrait { width: 34px; height: 34px; border-radius: 8px; }
+  .portrait .sprite { width: 30px; height: 30px; }
+  .portrait--small { width: 30px; height: 30px; }
+  .portrait--small .sprite { width: 26px; height: 26px; }
+  .side__name { font-size: 0.75rem; }
+  .life { font-size: 0.82rem; padding: 0.05rem 0.4rem; }
+  .mana { width: 11px; height: 11px; }
+  .duel-log { min-height: 0.9rem; font-size: 0.66rem; }
+  .duel-actions { gap: 0.3rem; }
+
+  /* The overworld goes three across: dial, map, chips. Stacked, the map was
+     height-limited to a third of a wide screen with empty margins either
+     side; beside its controls it gets nearly twice the tile. */
+  /* `.screen.is-active` sets display:flex with two classes, so this needs
+     three to win - otherwise only the display:contents below lands and the
+     map ends up smaller than it started. */
+  .screen[data-screen="map"].is-active {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-areas: "hud hud hud" "pad map act" "log log log";
+    gap: 0.3rem;
+  }
+  .hud { grid-area: hud; }
+  .map-wrap { grid-area: map; min-height: 0; min-width: 0; }
+  [data-screen="map"] .log { grid-area: log; }
+  .map-foot { display: contents; }
+  .dpad { grid-area: pad; align-self: center; }
+  .map-actions { grid-area: act; align-self: center; }
+}

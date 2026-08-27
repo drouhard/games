@@ -1,203 +1,218 @@
-/* Run state and meta progression.
+/* Run state, levelling, and the meta.
 
-   A run is disposable: HP, deck, floor. The Sanctum is what survives it -
-   Echoes and the unlocks they buy. Both live in localStorage, and like the
-   engine this file has no DOM access so the simulator can drive a whole
-   career through it. */
+   A run is a character walking three floors: hit points, a level, a purse and
+   a deck. What survives it is Lore, spent in the Sanctum. Both live in
+   localStorage, and like the duel and the dungeon this file has no DOM access
+   so the simulator can drive a whole career through it. */
 
 import {
-  CARDS, CLASSES, FLOORS, MAX_ENERGY, NEUTRAL_POOL, NODES_PER_FLOOR, REWARDS, UNLOCKS,
+  BOONS, CARDS, CLASSES, FLOORS, LEVEL_XP, LORE, NEUTRAL_POOL,
+  POTION_PRICE, SHOP_BURN_PRICE, SHOP_CARD_PRICES, UNLOCKS,
 } from "./data.js";
+import { makeFloor } from "./dungeon.js";
 
 const RUN_KEY = "deckdelve:run";
 const META_KEY = "deckdelve:meta";
 
 export const classById = (id) => CLASSES.find((c) => c.id === id);
+const pick = (list, rng) => list[Math.floor(rng() * list.length)];
 
-/* ---------- meta -------------------------------------------------------- */
+/* ---------- meta --------------------------------------------------------- */
 
-export function newMeta() {
-  return { echoes: 0, unlocked: [], runs: 0, wins: 0, best: 0 };
-}
-
-export function hasUnlock(meta, id) {
-  return meta.unlocked.includes(id);
-}
-
-export function unlockCost(id) {
-  return UNLOCKS.find((u) => u.id === id).cost;
-}
+export const newMeta = () => ({ lore: 0, unlocked: [], runs: 0, wins: 0, best: 0 });
+export const hasUnlock = (meta, id) => meta.unlocked.includes(id);
+export const unlockCost = (id) => UNLOCKS.find((u) => u.id === id).cost;
+export const classIsLocked = (cls, meta) => !!cls.unlock && !hasUnlock(meta, cls.unlock);
 
 export function buyUnlock(meta, id) {
   if (hasUnlock(meta, id)) return false;
   const cost = unlockCost(id);
-  if (meta.echoes < cost) return false;
-  meta.echoes -= cost;
+  if (meta.lore < cost) return false;
+  meta.lore -= cost;
   meta.unlocked.push(id);
   return true;
 }
 
-export function classIsLocked(cls, meta) {
-  return !!cls.unlock && !hasUnlock(meta, cls.unlock);
-}
+/* ---------- a run -------------------------------------------------------- */
 
-/* ---------- starting a run ---------------------------------------------- */
-
-export function newRun(classId, meta) {
+export function newRun(classId, meta, rng = Math.random) {
   const cls = classById(classId);
-  const maxHp = cls.maxHp + (hasUnlock(meta, "vigor") ? 8 : 0);
-  const deck = cls.deck.map((id) => ({
-    id,
-    upgraded: hasUnlock(meta, "honing") && id === cls.honed,
-  }));
-
-  return {
+  const maxHp = cls.maxHp + (hasUnlock(meta, "vigor") ? 6 : 0);
+  const run = {
     classId,
     maxHp,
     hp: maxHp,
-    energy: cls.energy || MAX_ENERGY,
-    floor: 0,
-    node: 0,
-    deck,
-    options: null, // the two paths on offer right now
-    fights: 0,
-    echoes: 0,
+    hand: cls.hand + (hasUnlock(meta, "grip") ? 1 : 0),
+    startRes: 0,
+    gold: hasUnlock(meta, "purse") ? 40 : 0,
+    potions: 0,
+    xp: 0,
+    level: 1,
+    pendingLevels: 0,
+    deck: cls.deck.map((id) => ({ id, upgraded: false })),
+    floorIndex: 0,
+    floor: null,
+    kills: 0,
+    lore: 0,
     over: null, // 'cleared' | 'dead'
+  };
+  run.floor = makeFloor(0, rng, { scouted: hasUnlock(meta, "scout") });
+  return run;
+}
+
+export function heroFor(run) {
+  const cls = classById(run.classId);
+  return {
+    name: cls.name,
+    sprite: cls.sprite,
+    hp: run.hp,
+    maxHp: run.maxHp,
+    hand: run.hand,
+    startRes: run.startRes,
+    resName: cls.resource,
+    ragePerRound: !!cls.ragePerRound,
   };
 }
 
-const pick = (list, rng) => list[Math.floor(rng() * list.length)];
-
-/* The two doors on offer. Step 0 is always a fight so a floor opens with a
-   fight; step 2 always offers a rest so the boss is never a surprise you
-   couldn't prepare for. */
-export function rollOptions(run, rng = Math.random) {
-  const floor = FLOORS[run.floor];
-  if (run.node >= NODES_PER_FLOOR) {
-    run.options = [{ type: "boss", enemies: [floor.boss], name: floor.name }];
-    return run.options;
+export function descend(run, meta, rng = Math.random) {
+  run.floorIndex += 1;
+  run.lore += LORE.floor;
+  // The stairs are the one guaranteed breather. Without it a run is decided
+  // by how much HP the last keeper happened to leave you with.
+  run.hp = Math.min(run.maxHp, run.hp + Math.round(run.maxHp * 0.35));
+  if (run.floorIndex >= FLOORS.length) {
+    run.over = "cleared";
+    run.lore += LORE.clear;
+    return null;
   }
-
-  const fight = () => ({ type: "fight", enemies: pick(floor.fights, rng) });
-  const elite = () => ({ type: "elite", enemies: pick(floor.elites, rng) });
-
-  const pairs = [
-    [fight(), rng() < 0.4 ? { type: "shrine" } : fight()],
-    [rng() < 0.5 ? elite() : fight(), rng() < 0.5 ? { type: "rest" } : { type: "shrine" }],
-    [rng() < 0.6 ? elite() : fight(), { type: "rest" }],
-  ];
-  run.options = pairs[run.node];
-  return run.options;
+  run.floor = makeFloor(run.floorIndex, rng, { scouted: hasUnlock(meta, "scout") });
+  return run.floor;
 }
 
-export const NODE_INFO = {
-  fight: { label: "Fight", icon: "⚔", desc: "A room with monsters in it." },
-  elite: { label: "Elite", icon: "☠", desc: "Harder. Worth more." },
-  rest: { label: "Camp", icon: "✦", desc: "Heal, or upgrade a card." },
-  shrine: { label: "Shrine", icon: "◈", desc: "Take a card, or burn one." },
-  boss: { label: "Boss", icon: "♆", desc: "The floor's keeper." },
+/* ---------- kills, XP and levels ----------------------------------------- */
+
+export function grantKill(run, foe) {
+  run.kills += 1;
+  run.xp += foe.xp;
+  run.gold += foe.gold;
+  if (foe.boss) run.lore += LORE.boss;
+
+  let gained = 0;
+  while (run.level < LEVEL_XP.length && run.xp >= LEVEL_XP[run.level]) {
+    run.level += 1;
+    gained += 1;
+  }
+  run.pendingLevels += gained;
+  return { levels: gained, xp: foe.xp, gold: foe.gold };
+}
+
+export const xpToNext = (run) =>
+  run.level >= LEVEL_XP.length ? null : LEVEL_XP[run.level] - run.xp;
+
+export const xpBar = (run) => {
+  if (run.level >= LEVEL_XP.length) return { value: 1, label: "max" };
+  const floorXp = LEVEL_XP[run.level - 1];
+  const nextXp = LEVEL_XP[run.level];
+  return { value: (run.xp - floorXp) / (nextXp - floorXp), label: `${run.xp}/${nextXp}` };
 };
 
-/* ---------- finishing a node -------------------------------------------- */
-
-export function advance(run) {
-  run.node += 1;
-  if (run.node > NODES_PER_FLOOR) {
-    run.floor += 1;
-    run.node = 0;
-    if (run.floor >= FLOORS.length) {
-      run.over = "cleared";
-      run.echoes += REWARDS.clear;
-    }
+/* A level is a draft: two cards out of your class pool and a boon. This is
+   the run's whole growth curve - there is no card handed out for winning a
+   fight, only the levels the fight buys. */
+export function levelOptions(run, meta, rng = Math.random) {
+  const cards = draftPool(run, meta);
+  const options = [];
+  const bag = cards.slice();
+  for (let i = 0; i < 2 && bag.length; i++) {
+    const id = bag.splice(Math.floor(rng() * bag.length), 1)[0];
+    options.push({ kind: "card", id });
   }
-  run.options = null;
+  const boons = BOONS.filter((b) => b.id !== "grip" || run.hand < 7);
+  options.push({ kind: "boon", boon: pick(boons, rng).id });
+  return options;
 }
 
-/* Every win patches you up a little. Without it the ladder is pure attrition:
-   nine fights at nine HP apiece kills a full-health hero before the last boss
-   regardless of how well any single fight went. */
-export function winFight(run, type) {
-  run.fights += 1;
-  run.echoes += REWARDS[type] ?? REWARDS.fight;
-  if (type === "elite") run.maxHp += 4;
-  const mend = { fight: 0.06, elite: 0.1, boss: 0.25 }[type] ?? 0.06;
-  run.hp = Math.min(run.maxHp, run.hp + Math.round(run.maxHp * mend));
-}
-
-export function loseRun(run) {
-  run.over = "dead";
-}
-
-/* Echoes are banked whichever way the run ended - a loss still buys a little
-   of the next attempt, which is the whole point of the Sanctum. */
-export function bankRun(meta, run) {
-  meta.runs += 1;
-  meta.echoes += run.echoes;
-  if (run.over === "cleared") meta.wins += 1;
-  const reached = run.floor * (NODES_PER_FLOOR + 1) + run.node;
-  meta.best = Math.max(meta.best, reached);
-  return run.echoes;
-}
-
-/* ---------- card rewards ------------------------------------------------ */
-
-export function rewardChoices(run, meta, rng = Math.random) {
+function draftPool(run, meta) {
   const cls = classById(run.classId);
-  const allowRare = hasUnlock(meta, "arsenal");
-  const pool = [...cls.pool, ...NEUTRAL_POOL].filter((id) => allowRare || !CARDS[id].rare);
-  const count = hasUnlock(meta, "insight") ? 4 : 3;
-
-  const picks = [];
-  const bag = pool.slice();
-  while (picks.length < count && bag.length) {
-    const index = Math.floor(rng() * bag.length);
-    picks.push(bag.splice(index, 1)[0]);
-  }
-  return picks.map((id) => ({ id, upgraded: false }));
+  const allowRare = hasUnlock(meta, "arsenal") || run.floorIndex >= 1;
+  return [...cls.pool, ...NEUTRAL_POOL].filter((id) => allowRare || !CARDS[id].rare);
 }
 
-/* The Shrine always digs into the deeper end of the pool - it is the only
-   place a rare shows up before Arsenal is unlocked. */
-export function shrineChoices(run, rng = Math.random) {
-  const cls = classById(run.classId);
-  const pool = [...cls.pool, ...NEUTRAL_POOL];
-  const rares = pool.filter((id) => CARDS[id].rare);
-  const rest = pool.filter((id) => !CARDS[id].rare);
-  const picks = [];
-  if (rares.length) picks.push(rares[Math.floor(rng() * rares.length)]);
-  const bag = rest.slice();
-  while (picks.length < 3 && bag.length) {
-    picks.push(bag.splice(Math.floor(rng() * bag.length), 1)[0]);
-  }
-  return picks.map((id) => ({ id, upgraded: false }));
+export function takeLevelOption(run, option) {
+  if (option.kind === "card") return addCard(run, { id: option.id });
+  const boon = BOONS.find((b) => b.id === option.boon);
+  if (boon.apply) boon.apply(run);
+  return boon;
 }
 
-export function addCard(run, card) {
-  run.deck.push({ id: card.id, upgraded: !!card.upgraded });
-}
+export const boonById = (id) => BOONS.find((b) => b.id === id);
 
-export function removeCard(run, index) {
-  run.deck.splice(index, 1);
-}
+/* ---------- the deck ----------------------------------------------------- */
+
+export const addCard = (run, card) => run.deck.push({ id: card.id, upgraded: !!card.upgraded });
+export const removeCard = (run, index) => run.deck.splice(index, 1);
+export const canUpgrade = (card) => !card.upgraded && !!CARDS[card.id].up;
 
 export function upgradeCard(run, index) {
   const card = run.deck[index];
   if (card && CARDS[card.id].up) card.upgraded = true;
 }
 
-export function canUpgrade(card) {
-  return !card.upgraded && !!CARDS[card.id].up;
+/* ---------- rooms -------------------------------------------------------- */
+
+export function chestLoot(run, meta, rng = Math.random) {
+  const gold = 18 + Math.floor(rng() * 22) + run.floorIndex * 8;
+  const bag = draftPool(run, meta).slice();
+  const cards = [];
+  for (let i = 0; i < 3 && bag.length; i++) {
+    cards.push(bag.splice(Math.floor(rng() * bag.length), 1)[0]);
+  }
+  return { gold, cards };
 }
 
-export function restHeal(run) {
-  const healed = Math.min(run.maxHp - run.hp, Math.round(run.maxHp * 0.4));
+export function shopStock(run, meta, rng = Math.random) {
+  const bag = draftPool(run, meta).slice();
+  const cards = [];
+  for (let i = 0; i < 3 && bag.length; i++) {
+    const id = bag.splice(Math.floor(rng() * bag.length), 1)[0];
+    cards.push({ id, price: CARDS[id].rare ? SHOP_CARD_PRICES.rare : SHOP_CARD_PRICES.common });
+  }
+  return { cards, potion: POTION_PRICE, burn: SHOP_BURN_PRICE };
+}
+
+export function spend(run, amount) {
+  if (run.gold < amount) return false;
+  run.gold -= amount;
+  return true;
+}
+
+export function drinkPotion(run) {
+  if (run.potions <= 0) return 0;
+  run.potions -= 1;
+  const healed = Math.min(run.maxHp - run.hp, 14);
   run.hp += healed;
   return healed;
 }
 
-/* ---------- saving ------------------------------------------------------
+export function restAtFire(run) {
+  const healed = Math.min(run.maxHp - run.hp, Math.round(run.maxHp * 0.35));
+  run.hp += healed;
+  return healed;
+}
 
-   localStorage throws in some private-browsing modes; a game that can't save
+export const loseRun = (run) => { run.over = "dead"; };
+
+export function bankRun(meta, run) {
+  meta.runs += 1;
+  meta.lore += run.lore;
+  if (run.over === "cleared") meta.wins += 1;
+  meta.best = Math.max(meta.best, run.floorIndex + 1);
+  return run.lore;
+}
+
+/* ---------- saving -------------------------------------------------------
+
+   localStorage throws in some private-browsing modes; a game that cannot save
    should still be playable. */
 
 function read(key) {
@@ -219,28 +234,23 @@ function write(key, value) {
 
 export function loadMeta() {
   const meta = read(META_KEY);
-  if (!meta || typeof meta.echoes !== "number" || !Array.isArray(meta.unlocked)) return newMeta();
+  if (!meta || typeof meta.lore !== "number" || !Array.isArray(meta.unlocked)) return newMeta();
   const valid = new Set(UNLOCKS.map((u) => u.id));
   meta.unlocked = meta.unlocked.filter((id) => valid.has(id));
   return { ...newMeta(), ...meta };
 }
 
-export function saveMeta(meta) {
-  write(META_KEY, meta);
-}
+export const saveMeta = (meta) => write(META_KEY, meta);
+export const saveRun = (run) => (!run || run.over ? clearRun() : write(RUN_KEY, run));
 
-export function saveRun(run) {
-  if (!run || run.over) clearRun();
-  else write(RUN_KEY, run);
-}
-
-/* Rejects a save written by an older, differently-shaped version rather than
-   letting it crash the fight. */
+/* Rejects a save written by an older, differently shaped version rather than
+   letting it crash the dungeon. */
 export function loadRun() {
   const run = read(RUN_KEY);
   if (!run || !classById(run.classId) || !Array.isArray(run.deck) || run.over) return null;
   if (run.deck.some((c) => !CARDS[c.id])) return null;
-  if (typeof run.floor !== "number" || run.floor >= FLOORS.length) return null;
+  if (typeof run.floorIndex !== "number" || run.floorIndex >= FLOORS.length) return null;
+  if (!run.floor?.tiles?.length) return null;
   return run;
 }
 

@@ -1,10 +1,16 @@
-/* The controller: screens, input, and animation timing.
+/* The controller: screens, taps and timing.
 
-   Everything with a rule in it lives in combat.js and run.js; this file only
-   decides what is on screen and what a tap means. */
+   Everything with a rule in it lives in combat.js, dungeon.js and run.js;
+   this file only decides what is on screen and what a tap means.
 
-import { CLASSES, ENEMIES, FLOORS, NODES_PER_FLOOR, STATUSES, UNLOCKS, cardDef } from "./data.js";
+   The tap rule: nothing commits on the tap that shows it to you. Walking onto
+   bare stone is the one exception - it costs nothing and you can walk back -
+   but a monster, a chest, a shopkeeper, the stairs and every card go through
+   an inspector with a labelled button. */
+
+import { CLASSES, FLOORS, FOES, PATIENCE, STATUSES, UNLOCKS, cardDef } from "./data.js";
 import * as combat from "./combat.js";
+import * as dungeon from "./dungeon.js";
 import * as run from "./run.js";
 import * as ui from "./ui.js";
 
@@ -13,39 +19,35 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 let meta = run.loadMeta();
 let current = null; // the run in progress
-let fight = null; // the combat state, while a fight is on
-let node = null; // which path node this fight belongs to
-let aiming = null; // hand index of a card that has been played and wants a target
-let busy = false; // true while the monsters are taking their turn
-
-const fighterNodes = new Map();
+let fight = null; // the duel, while one is on
+let tile = null; // the tile the duel belongs to
+let busy = false; // true while a round is resolving
+let stock = null; // the pedlar's stock, rolled once per visit
 
 /* ---------- title -------------------------------------------------------- */
 
 function showTitle() {
-  const saved = run.loadRun();
-  $("btn-continue").hidden = !saved;
+  $("btn-continue").hidden = !run.loadRun();
   ui.showScreen("title");
 }
 
 function buildTitleArt() {
-  const art = $("title-art");
-  art.replaceChildren(...CLASSES.map((cls) => ui.sprite(cls.sprite)));
+  $("title-art").replaceChildren(...CLASSES.map((cls) => ui.sprite(cls.sprite)));
 }
 
 /* ---------- sanctum ------------------------------------------------------ */
 
 function showSanctum() {
-  $("sanctum-echoes").textContent = meta.echoes;
+  $("sanctum-lore").textContent = meta.lore;
   $("sanctum-stats").textContent = meta.runs
-    ? `${meta.runs} run${meta.runs === 1 ? "" : "s"}, ${meta.wins} cleared. Echoes are spent here and never lost.`
-    : "Echoes come back from every run, won or lost. Spend them here.";
+    ? `${meta.runs} run${meta.runs === 1 ? "" : "s"}, ${meta.wins} cleared. Lore is spent here and never lost.`
+    : "Lore comes back from every run, won or lost. Spend it here.";
 
   const list = $("unlock-list");
   list.replaceChildren();
   for (const unlock of UNLOCKS) {
     const owned = run.hasUnlock(meta, unlock.id);
-    const affordable = meta.echoes >= unlock.cost;
+    const affordable = meta.lore >= unlock.cost;
     const row = ui.el("button", "unlock");
     row.type = "button";
     if (owned) row.classList.add("is-owned");
@@ -56,18 +58,16 @@ function showSanctum() {
     head.append(ui.el("span", "unlock__cost", owned ? "held" : `${unlock.cost} ✦`));
     row.append(head);
     row.append(ui.el("p", "unlock__desc", unlock.desc));
-
     if (!owned) row.addEventListener("pointerdown", () => openUnlock(unlock, affordable));
     list.append(row);
   }
   ui.showScreen("sanctum");
 }
 
-/* Reading what an unlock does must not spend the Echoes for it. */
 function openUnlock(unlock, affordable) {
   ui.openPanel((panel) => {
     panel.append(ui.panelHeader(unlock.name, unlock.desc));
-    panel.append(ui.el("p", "panel__body", `${unlock.cost} ✦ · you hold ${meta.echoes} ✦`));
+    panel.append(ui.el("p", "panel__body", `${unlock.cost} ✦ · you hold ${meta.lore} ✦`));
     if (affordable) {
       panel.append(button(`Spend ${unlock.cost} ✦`, () => {
         run.buyUnlock(meta, unlock.id);
@@ -76,18 +76,17 @@ function openUnlock(unlock, affordable) {
         showSanctum();
       }, "primary"));
     } else {
-      panel.append(ui.el("p", "panel__body", "Not enough Echoes yet."));
+      panel.append(ui.el("p", "panel__body", "Not enough Lore yet."));
     }
     panel.append(button("Back", () => ui.closePanel(), "quiet"));
   });
 }
 
-/* ---------- choosing a class --------------------------------------------- */
+/* ---------- choosing a delver -------------------------------------------- */
 
 function showPick() {
   const list = $("class-list");
   list.replaceChildren();
-
   for (const cls of CLASSES) {
     const locked = run.classIsLocked(cls, meta);
     const card = ui.el("button", "pick");
@@ -100,241 +99,377 @@ function showPick() {
     head.append(ui.el("span", "pick__name", cls.name));
     head.append(ui.el("span", "pick__stat", locked
       ? `Locked · ${run.unlockCost(cls.unlock)} ✦`
-      : `${cls.maxHp + (run.hasUnlock(meta, "vigor") ? 8 : 0)} HP · ${cls.energy || 3} energy`));
+      : `${cls.maxHp + (run.hasUnlock(meta, "vigor") ? 6 : 0)} HP · ${cls.resource}`));
     body.append(head);
     body.append(ui.el("p", "pick__blurb", cls.blurb));
     card.append(body);
-
     if (!locked) card.addEventListener("pointerdown", () => openClass(cls));
     list.append(card);
   }
   ui.showScreen("pick");
 }
 
-/* The starting deck is the whole reason to pick one class over another, so
-   the picker shows it before the run begins rather than after. */
 function openClass(cls) {
   ui.openPanel((panel) => {
-    const maxHp = cls.maxHp + (run.hasUnlock(meta, "vigor") ? 8 : 0);
-    panel.append(ui.panelHeader(cls.name, `${maxHp} HP · ${cls.energy || 3} energy a turn`));
+    const maxHp = cls.maxHp + (run.hasUnlock(meta, "vigor") ? 6 : 0);
+    const hand = cls.hand + (run.hasUnlock(meta, "grip") ? 1 : 0);
+    panel.append(ui.panelHeader(cls.name, `${maxHp} HP · ${hand} cards a round · ${cls.resource}`));
     panel.append(ui.el("p", "panel__body", cls.blurb));
+    panel.append(ui.el("p", "panel__sub", "Starting deck"));
 
     const grid = ui.el("div", "deck-grid");
-    const honed = run.hasUnlock(meta, "honing");
     for (const id of cls.deck) {
-      grid.append(cardButton(cardDef(id, honed && id === cls.honed), { compact: true }));
+      const def = cardDef(id, false);
+      const element = ui.cardEl(def, { compact: true, resName: cls.resource });
+      element.addEventListener("pointerdown", () => openCardLook(def, cls.resource));
+      grid.append(element);
     }
-    panel.append(ui.el("p", "panel__sub", "Starting deck"));
     panel.append(grid);
-
     panel.append(button("Begin the descent", () => {
       ui.closeAllPanels();
-      startRun(cls.id);
+      current = run.newRun(cls.id, meta);
+      run.saveRun(current);
+      setLog(`${FLOORS[0].name}. Something is sitting on the stairs.`);
+      showMap();
     }, "primary"));
     panel.append(button("Back", () => ui.closePanel(), "quiet"));
   });
 }
 
-function startRun(classId) {
-  current = run.newRun(classId, meta);
-  run.saveRun(current);
-  showPath();
-}
+/* ---------- the floor ---------------------------------------------------- */
 
-/* ---------- the path ----------------------------------------------------- */
+const resName = () => run.classById(current.classId).resource;
 
 function heroView() {
   const cls = run.classById(current.classId);
-  return { name: cls.name, sprite: cls.sprite, hp: current.hp, maxHp: current.maxHp, statuses: {}, block: 0 };
+  return {
+    name: cls.name, sprite: cls.sprite,
+    hp: current.hp, maxHp: current.maxHp,
+    gold: current.gold, statuses: {},
+    xp: run.xpBar(current),
+  };
 }
 
-function showPath() {
-  if (!current.options) run.rollOptions(current);
-  run.saveRun(current);
+function setLog(text) {
+  $("map-log").textContent = text;
+}
 
-  const floor = FLOORS[current.floor];
-  $("path-title").textContent = `${floor.name} · ${Math.min(current.node + 1, NODES_PER_FLOOR + 1)}/${NODES_PER_FLOOR + 1}`;
+function showMap() {
+  const floor = current.floor;
+  const left = dungeon.remaining(floor);
+  $("map-title").textContent = `${floor.name} · floor ${current.floorIndex + 1}`;
+  $("map-left").textContent = `${left.foes} left · ${left.unknown} dark`;
   $("deck-count").textContent = current.deck.length;
-  $("path-hero").replaceChildren(ui.heroStrip(heroView(), { note: `Floor ${current.floor + 1}` }));
+  $("potion-count").textContent = current.potions;
+  $("btn-potion").disabled = current.potions <= 0 || current.hp >= current.maxHp;
+  $("map-hero").replaceChildren(ui.heroStrip(heroView(), { level: `Level ${current.level}` }));
 
-  const boss = current.options.length === 1;
-  $("path-prompt").textContent = boss ? "Nothing left but the keeper." : "Two ways on. Pick one.";
-
-  const options = $("path-options");
-  options.replaceChildren();
-  for (const option of current.options) {
-    const info = run.NODE_INFO[option.type];
-    const button = ui.el("button", `door door--${option.type}`);
-    button.type = "button";
-    button.append(ui.el("span", "door__icon", info.icon));
-
-    const body = ui.el("span", "door__body");
-    const label = option.type === "boss" ? ENEMIES[option.enemies[0]].name : info.label;
-    body.append(ui.el("span", "door__label", label));
-    // Name the monsters rather than repeating "a room with monsters in it" -
-    // knowing it is two Motes and not a Hexer is the whole choice.
-    body.append(ui.el("span", "door__desc", option.enemies ? foeList(option.enemies) : info.desc));
-    button.append(body);
-
-    if (option.enemies) {
-      const foes = ui.el("span", "door__foes");
-      for (const key of option.enemies) foes.append(ui.sprite(ENEMIES[key].sprite));
-      button.append(foes);
+  const grid = $("grid");
+  grid.style.setProperty("--cols", floor.size);
+  grid.replaceChildren();
+  for (const row of floor.tiles) {
+    for (const spot of row) {
+      const here = spot.x === floor.x && spot.y === floor.y;
+      const element = ui.tileEl(spot, {
+        hero: here,
+        steppable: dungeon.canStep(floor, spot),
+        foeSprite: spot.content?.foe ? FOES[spot.content.foe].sprite : null,
+      });
+      if (here) element.append(ui.sprite(run.classById(current.classId).sprite, "tile__hero"));
+      element.addEventListener("pointerdown", () => tapTile(spot));
+      grid.append(element);
     }
-    button.addEventListener("pointerdown", () => openDoor(option));
-    options.append(button);
   }
-  ui.showScreen("path");
+  run.saveRun(current);
+  ui.showScreen("map");
 }
 
-function foeList(keys) {
-  const counts = new Map();
-  for (const key of keys) counts.set(key, (counts.get(key) || 0) + 1);
-  return [...counts]
-    .map(([key, n]) => (n > 1 ? `${n}× ${ENEMIES[key].name}` : ENEMIES[key].name))
-    .join(", ");
-}
+function tapTile(spot) {
+  if (ui.panelOpen()) return;
+  const floor = current.floor;
+  if (spot.x === floor.x && spot.y === floor.y) return openHere();
 
-/* What is behind the door, before you walk through it: which monsters, how
-   much they have, and what the room is worth. */
-function openDoor(option) {
-  const info = run.NODE_INFO[option.type];
-  ui.openPanel((panel) => {
-    const label = option.type === "boss" ? ENEMIES[option.enemies[0]].name : info.label;
-    panel.append(ui.panelHeader(label, info.desc));
-
-    if (option.enemies) {
-      const list = ui.el("div", "foe-list");
-      for (const key of option.enemies) {
-        const enemy = ENEMIES[key];
-        const row = ui.el("div", "foe-list__row");
-        row.append(ui.sprite(enemy.sprite));
-        const body = ui.el("div", null);
-        body.append(ui.el("b", null, enemy.name));
-        const hp = enemy.hp[0] === enemy.hp[1] ? `${enemy.hp[0]}` : `${enemy.hp[0]}-${enemy.hp[1]}`;
-        body.append(ui.el("span", "foe-list__hp", ` ${hp} HP`));
-        body.append(ui.el("p", "foe-list__moves", moveSummary(enemy)));
-        row.append(body);
-        list.append(row);
-      }
-      panel.append(list);
+  if (dungeon.canStep(floor, spot)) {
+    // Bare stone is not a decision: stepping costs nothing and you can step
+    // back. Anything with something on it goes through the inspector.
+    if (spot.type === "floor") {
+      dungeon.step(floor, spot);
+      setLog("");
+      return showMap();
     }
+    return openTile(spot, true);
+  }
+  if (spot.known && spot.type !== "floor") openTile(spot, false);
+}
 
-    panel.append(button(option.type === "boss" ? "Face it" : "Go this way", () => {
-      ui.closeAllPanels();
-      takeNode(option);
-    }, "primary"));
+function openHere() {
+  const here = dungeon.heroTile(current.floor);
+  const last = current.floorIndex === FLOORS.length - 1;
+
+  ui.openPanel((panel) => {
+    // Killing a keeper leaves you standing on the stairs it was sitting on,
+    // so this is the only place the descent can be offered.
+    if (here.type === "stairs") {
+      panel.append(ui.panelHeader(last ? "The way out" : "Stairs down",
+        last ? "Out of the Vault, with everything you are carrying." : `Down to floor ${current.floorIndex + 2}. You will heal on the way.`));
+      panel.append(button(last ? "Climb out" : "Take the stairs", () => {
+        ui.closeAllPanels();
+        takeStairs();
+      }, "primary"));
+      panel.append(button("Not yet", () => ui.closePanel(), "quiet"));
+      return;
+    }
+    panel.append(ui.panelHeader("You are here", `${current.hp}/${current.maxHp} HP · ${current.gold} gold`));
+    panel.append(ui.el("p", "panel__body",
+      `Level ${current.level}${run.xpToNext(current) == null ? "" : `, ${run.xpToNext(current)} XP to the next`}.`));
     panel.append(button("Back", () => ui.closePanel(), "quiet"));
   });
 }
 
-/* The monster's whole repertoire, so a door is a real decision. */
-function moveSummary(enemy) {
-  return enemy.moves.map((move) => ui.intentWords({
-    kind: move.kind, amount: move.amount, times: move.times || 1, status: move.status,
-  }).replace(/\.$/, "")).join(" · ");
-}
-
-function takeNode(option) {
-  node = option;
-  if (option.type === "rest") return openCamp();
-  if (option.type === "shrine") return openShrine();
-  startFight(option);
-}
-
-/* ---------- fights ------------------------------------------------------- */
-
-function startFight(option) {
-  const cls = run.classById(current.classId);
-  fight = combat.startCombat({
-    hero: {
-      name: cls.name, sprite: cls.sprite,
-      hp: current.hp, maxHp: current.maxHp, maxEnergy: current.energy,
-    },
-    deck: current.deck,
-    enemies: option.enemies,
-    extraDraw: run.hasUnlock(meta, "reserve") ? 1 : 0,
+/* Everything on the floor is readable before it is walked into: what the
+   monster's deck holds, what the room does, what the stairs cost. */
+function openTile(spot, adjacent) {
+  const info = dungeon.TILES[spot.type];
+  ui.openPanel((panel) => {
+    if (spot.content?.foe) {
+      const def = FOES[spot.content.foe];
+      const label = spot.type === "boss" ? def.name : spot.type === "elite" ? `Dire ${def.name}` : def.name;
+      panel.append(ui.panelHeader(label, info.desc));
+      const art = ui.el("div", "zoom-foe");
+      art.append(ui.sprite(def.sprite));
+      panel.append(art);
+      const hp = spot.type === "elite" ? `${Math.round(def.hp[0] * 1.4)}-${Math.round(def.hp[1] * 1.4)}` :
+        def.hp[0] === def.hp[1] ? `${def.hp[0]}` : `${def.hp[0]}-${def.hp[1]}`;
+      panel.append(ui.el("p", "panel__body",
+        `${hp} HP · plays ${def.draws + (spot.type === "elite" ? 1 : 0)} cards a round · worth ${def.xp} XP`));
+      panel.append(ui.el("p", "panel__sub", "Its deck"));
+      panel.append(ui.foeDeck(combat.foeDeckList({ key: spot.content.foe })));
+    } else {
+      panel.append(ui.panelHeader(info.label, info.desc));
+      if (spot.type === "stairs") {
+        panel.append(ui.el("p", "panel__body", `Down to floor ${current.floorIndex + 2}. You will heal on the way.`));
+      }
+    }
+    if (adjacent) {
+      panel.append(button(enterLabel(spot), () => {
+        ui.closeAllPanels();
+        dungeon.step(current.floor, spot);
+        enterTile(spot);
+      }, "primary"));
+    }
+    panel.append(button("Back", () => ui.closePanel(), "quiet"));
   });
-  aiming = null;
-  busy = false;
-  setLog(option.type === "boss" ? "The keeper turns to face you." : "");
-  // Screen first: the hand measures itself when it renders, and a hidden
-  // screen measures zero.
-  ui.showScreen("battle");
-  render();
 }
 
-function setLog(text) {
-  $("battle-log").textContent = text;
-}
-
-function render() {
-  if (!fight) return;
-  fighterNodes.clear();
-
-  const floor = FLOORS[current.floor];
-  $("battle-title").textContent = node.type === "boss" ? floor.name : run.NODE_INFO[node.type].label;
-  $("battle-turn").textContent = fight.turn;
-
-  const row = $("enemy-row");
-  row.replaceChildren();
-  const needsTarget = aiming != null;
-  for (const enemy of fight.enemies) {
-    if (!enemy.alive) continue;
-    const element = ui.foeEl(enemy, combat.intentPreview(enemy), { targetable: needsTarget });
-    element.addEventListener("pointerdown", () => tapEnemy(enemy.uid));
-    fighterNodes.set(enemy.uid, element);
-    row.append(element);
+function enterLabel(spot) {
+  switch (spot.type) {
+    case "foe": case "elite": return "Fight it";
+    case "boss": return "Face it";
+    case "stairs": return "Take the stairs";
+    case "chest": return "Open it";
+    case "shop": return "Trade";
+    case "altar": return "Approach";
+    case "fire": return "Sit down";
+    default: return "Step there";
   }
+}
 
-  const heroNode = ui.heroStrip(fight.hero, { energy: fight.hero.energy, maxEnergy: fight.hero.maxEnergy });
-  fighterNodes.set("hero", heroNode);
-  $("battle-hero").replaceChildren(heroNode);
+function enterTile(spot) {
+  tile = spot;
+  switch (spot.type) {
+    case "foe": case "elite": case "boss": return startDuel(spot);
+    case "chest": return openChest();
+    case "shop": return openShop();
+    case "altar": return openAltar();
+    case "fire": return openFire();
+    case "stairs": return takeStairs();
+    default: showMap();
+  }
+}
+
+/* ---------- rooms -------------------------------------------------------- */
+
+function finishRoom() {
+  dungeon.clearTile(current.floor, tile);
+  ui.closeAllPanels();
+  showMap();
+}
+
+function openFire() {
+  ui.openPanel((panel) => {
+    const healed = Math.min(current.maxHp - current.hp, Math.round(current.maxHp * 0.35));
+    panel.append(ui.panelHeader("Campfire", "It will not burn twice."));
+    panel.append(ui.el("p", "panel__body", `${current.hp}/${current.maxHp} HP. Resting mends ${healed}.`));
+    panel.append(button(`Rest · heal ${healed}`, () => {
+      run.restAtFire(current);
+      setLog(`You rest. +${healed} HP.`);
+      finishRoom();
+    }, "primary"));
+    panel.append(button("Leave it", () => { ui.closeAllPanels(); showMap(); }, "quiet"));
+  });
+}
+
+function openChest() {
+  const loot = run.chestLoot(current, meta);
+  ui.openPanel((panel) => {
+    panel.append(ui.panelHeader("Chest", "Coin, or something to shuffle in."));
+    panel.append(button(`Take the gold · ${loot.gold}`, () => {
+      current.gold += loot.gold;
+      setLog(`+${loot.gold} gold.`);
+      finishRoom();
+    }, "primary"));
+    panel.append(ui.el("p", "panel__sub", "Or take one of these"));
+    panel.append(cardRow(loot.cards, (id) => openCardOffer(cardDef(id, false), () => {
+      run.addCard(current, { id });
+      setLog(`${cardDef(id, false).name} joins the deck.`);
+      finishRoom();
+    })));
+  });
+}
+
+function openShop() {
+  // Rolled once for the visit: buying a card must not reshuffle the shelf.
+  if (!stock) stock = run.shopStock(current, meta);
+  ui.openPanel((panel) => {
+    panel.append(ui.panelHeader("Pedlar", `${current.gold} gold in your purse.`));
+    if (stock.cards.length) {
+      panel.append(ui.el("p", "panel__sub", "Cards"));
+      const row = ui.el("div", "card-row");
+      stock.cards.forEach((item, index) => {
+        const def = cardDef(item.id, false);
+        const wrap = ui.el("div", "buy");
+        wrap.append(ui.cardEl(def, { affordable: current.gold >= item.price, resName: resName() }));
+        wrap.append(ui.el("span", "buy__price", `${item.price}g`));
+        wrap.addEventListener("pointerdown", () => openCardOffer(def, () => {
+          if (!run.spend(current, item.price)) return;
+          run.addCard(current, { id: item.id });
+          stock.cards.splice(index, 1);
+          ui.closeAllPanels();
+          openShop();
+        }, `Buy · ${item.price}g`, current.gold >= item.price));
+        row.append(wrap);
+      });
+      panel.append(row);
+    }
+
+    const potion = button(`Potion · ${stock.potion}g`, () => {
+      if (!run.spend(current, stock.potion)) return;
+      current.potions += 1;
+      ui.closeAllPanels();
+      openShop();
+    });
+    potion.disabled = current.gold < stock.potion;
+    panel.append(potion);
+
+    const burn = button(`Burn a card · ${stock.burn}g`, () => openDeck({
+      title: "Burn",
+      subtitle: `${stock.burn} gold to lose a card for good.`,
+      action: "burn",
+      price: stock.burn,
+      then: () => { ui.closeAllPanels(); openShop(); },
+    }));
+    burn.disabled = current.gold < stock.burn;
+    panel.append(burn);
+
+    panel.append(button("Done", () => { stock = null; finishRoom(); }, "quiet"));
+  });
+}
+
+function openAltar() {
+  ui.openPanel((panel) => {
+    panel.append(ui.panelHeader("Altar", "One offering, then the stone goes quiet."));
+    panel.append(button("Temper a card", () => openDeck({
+      title: "Temper",
+      subtitle: "Tap a card to see what it becomes.",
+      filter: (card) => run.canUpgrade(card),
+      action: "upgrade",
+    }), "primary"));
+    panel.append(button("Burn a card", () => openDeck({
+      title: "Burn",
+      subtitle: "Tap a card to lose it for good.",
+      action: "burn",
+    })));
+    panel.append(button("Leave it alone", () => { ui.closeAllPanels(); showMap(); }, "quiet"));
+  });
+}
+
+function takeStairs() {
+  const floor = run.descend(current, meta);
+  if (current.over === "cleared") {
+    const lore = run.bankRun(meta, current);
+    run.saveMeta(meta);
+    run.clearRun();
+    return openRunOver(true, lore);
+  }
+  setLog(`${floor.name}. You feel better for the walk.`);
+  showMap();
+}
+
+/* ---------- the duel ----------------------------------------------------- */
+
+function startDuel(spot) {
+  const spec = dungeon.foeFor(spot);
+  const foe = combat.makeFoe(spec.key, spec);
+  fight = combat.startCombat({ hero: run.heroFor(current), deck: current.deck, foe });
+  busy = false;
+  ui.showScreen("duel");
+  renderDuel();
+}
+
+function renderDuel() {
+  if (!fight) return;
+  const cls = run.classById(current.classId);
+  $("duel-title").textContent = fight.foe.name;
+  $("duel-round").textContent = fight.round;
+  $("duel-round").classList.toggle("is-late", fight.round > PATIENCE - 3);
+
+  const foeCard = $("foe-card");
+  foeCard.replaceChildren(ui.foeFace(fight.foe, { big: fight.foe.boss }));
+  $("foe-tell").textContent = fight.foe.played.length
+    ? `It played ${fight.foe.played.join(", ")}.`
+    : "It is holding back.";
+
+  $("scales").replaceChildren(ui.scales(fight));
+
+  const heroView = {
+    name: cls.name, sprite: cls.sprite,
+    hp: fight.hero.hp, maxHp: fight.hero.maxHp,
+    statuses: fight.hero.statuses,
+    attack: fight.hero.attack, defense: fight.hero.defense,
+    resource: { name: cls.resource, value: fight.hero.res },
+  };
+  $("duel-hero").replaceChildren(ui.heroStrip(heroView, { pools: true }));
 
   const hand = $("hand");
   hand.replaceChildren();
   fight.hand.forEach((card, index) => {
     const def = combat.defOf(card);
     const element = ui.cardEl(def, {
-      affordable: fight.hero.energy >= def.cost,
-      selected: aiming === index,
+      affordable: (def.cost || 0) <= fight.hero.res,
+      resName: cls.resource,
     });
     element.addEventListener("pointerdown", () => tapCard(index));
     hand.append(element);
   });
   fanHand(hand);
 
-  $("card-detail").textContent = aiming != null
-    ? "Tap a monster, or Cancel."
-    : "Tap a card to read it.";
-
-  // While a card is waiting on a target, End Turn would be a trap.
-  const endTurnButton = $("btn-end-turn");
-  endTurnButton.textContent = aiming != null ? "Cancel" : "End Turn";
-  endTurnButton.classList.toggle("rpg-button--quiet", aiming != null);
-  endTurnButton.classList.toggle("rpg-button--primary", aiming == null);
-  endTurnButton.disabled = busy || !!fight.over;
-
+  $("card-detail").textContent = fight.hand.length ? "Tap a card to read it." : "Nothing left in hand.";
   $("pile-draw").textContent = fight.draw.length;
   $("pile-discard").textContent = fight.discard.length;
+  $("btn-end-round").disabled = busy || !!fight.over;
 }
 
-/* Overlaps the cards just enough that the whole hand fits the screen. Ten
-   cards on a 375px phone is a real hand, not an edge case - Insight and
-   Prepare draw into one routinely. */
+/* Overlaps the cards just enough that the whole hand fits the screen. */
 function fanHand(hand) {
   hand.style.removeProperty("--card-w");
   hand.style.setProperty("--overlap", "0px");
   const count = hand.children.length;
   if (count < 2) return;
-
   const gap = parseFloat(getComputedStyle(hand).columnGap) || 0;
   const room = hand.clientWidth;
   if (room <= 0) return; // laid out while hidden - nothing to fit against
   const span = (width) => count * width + (count - 1) * gap;
 
-  // Narrow the cards first, down to a floor where the cost pip and the icon
-  // are still legible, and only overlap for whatever is left over.
   let width = hand.children[0].offsetWidth;
   if (span(width) > room) {
     width = Math.max(44, Math.floor((room - (count - 1) * gap) / count));
@@ -344,299 +479,237 @@ function fanHand(hand) {
   if (spill > 0) hand.style.setProperty("--overlap", `-${Math.ceil(spill / (count - 1))}px`);
 }
 
-/* Tapping a card reads it. Nothing is spent until the Play button in the
-   zoom is pressed - a fat thumb on a fanned hand must never cost a turn. */
 function tapCard(index) {
   if (busy || !fight || fight.over) return;
-  // Reaching for a different card while aiming means you changed your mind
-  // about the first one, not that you want to cancel and tap again.
-  if (aiming != null) stopAiming();
-
   const card = fight.hand[index];
   const def = combat.defOf(card);
-  const affordable = fight.hero.energy >= def.cost;
+  const cost = def.cost || 0;
+  const affordable = cost <= fight.hero.res;
 
   ui.openPanel((panel) => {
-    panel.append(ui.zoomCard(def));
+    panel.append(ui.zoomCard(def, resName()));
     const mentioned = ui.statusesIn(def);
     if (mentioned.length) panel.append(ui.statusNotes(mentioned));
 
-    if (affordable) {
-      const targeted = combat.needsTarget(card) && combat.livingEnemies(fight).length > 1;
-      panel.append(button(targeted ? "Play · pick a target" : "Play", () => {
-        ui.closeAllPanels();
-        beginPlay(index);
-      }, "primary"));
-    } else {
+    if (!affordable) {
       panel.append(ui.el("p", "panel__body",
-        `Costs ${def.cost}. You have ${fight.hero.energy} energy left this turn.`));
+        `Costs ${cost} ${resName()}. You have ${fight.hero.res}.`));
+    } else if (def.modes) {
+      def.modes.forEach((mode, i) => {
+        panel.append(button(mode.label, () => {
+          ui.closeAllPanels();
+          play(index, i);
+        }, i === 0 ? "primary" : undefined));
+      });
+    } else {
+      panel.append(button("Play", () => {
+        ui.closeAllPanels();
+        play(index, 0);
+      }, "primary"));
     }
     panel.append(button("Back", () => ui.closePanel(), "quiet"));
   });
 }
 
-function beginPlay(index) {
-  const card = fight.hand[index];
-  if (!card) return;
-  if (combat.needsTarget(card)) {
-    const alive = combat.livingEnemies(fight);
-    if (alive.length > 1) {
-      aiming = index;
-      setLog(`${combat.defOf(card).name} — pick who it hits.`);
-      return render();
-    }
-    return playCard(index, alive[0]?.uid);
+function play(index, mode) {
+  const events = combat.playCard(fight, index, mode);
+  if (!events.length) return renderDuel();
+  renderDuel();
+  for (const event of events) {
+    if (event.t === "heal") ui.floatText($("duel-hero"), `+${event.amount}`, "heal");
   }
-  playCard(index, null);
 }
 
-function stopAiming() {
-  aiming = null;
-  setLog("");
-  render();
-}
-
-/* Outside of aiming, a monster is something to read: what it has left, what
-   it is about to do, and what its statuses mean. */
-function tapEnemy(uid) {
-  if (busy || !fight || fight.over) return;
-  if (aiming != null) {
-    const index = aiming;
-    aiming = null;
-    return playCard(index, uid);
-  }
-
-  const enemy = fight.enemies.find((e) => e.uid === uid);
-  if (!enemy) return;
+function openFoe() {
+  if (busy || !fight) return;
   ui.openPanel((panel) => {
-    panel.append(ui.panelHeader(enemy.name, `${enemy.hp}/${enemy.maxHp} HP`));
+    panel.append(ui.panelHeader(fight.foe.name, `${fight.foe.hp}/${fight.foe.maxHp} HP`));
     const art = ui.el("div", "zoom-foe");
-    art.append(ui.sprite(enemy.sprite));
+    art.append(ui.sprite(fight.foe.sprite));
     panel.append(art);
-    panel.append(ui.el("p", "panel__body", ui.intentWords(combat.intentPreview(enemy))));
-    if (enemy.block > 0) panel.append(ui.el("p", "panel__body", `Holding ${enemy.block} Block.`));
-    const statuses = Object.keys(enemy.statuses).filter((id) => enemy.statuses[id] > 0);
+    panel.append(ui.el("p", "panel__body",
+      `Attack ${fight.foe.attack} · Defense ${fight.foe.defense} · draws ${fight.foe.draws} a round.`));
+    const statuses = Object.keys(fight.foe.statuses).filter((id) => fight.foe.statuses[id] > 0);
     if (statuses.length) panel.append(ui.statusNotes(statuses));
+    panel.append(ui.el("p", "panel__sub", "Its deck"));
+    panel.append(ui.foeDeck(combat.foeDeckList(fight.foe)));
     panel.append(button("Back", () => ui.closePanel(), "quiet"));
   });
 }
 
-function playCard(index, targetUid) {
-  const card = fight.hand[index];
-  if (!card) return render();
-  const def = combat.defOf(card);
-  const events = combat.playCard(fight, index, targetUid);
-  if (!events.length) return render();
-
-  setLog(`${def.name}.`);
-  render();
-  showEvents(events);
-  if (fight.over) finishFight();
-}
-
-/* Floats every number in a batch of events onto whoever it happened to.
-   Called after a re-render, so the elements are the current ones. */
-function showEvents(events) {
-  for (const event of events) {
-    const target = fighterNodes.get(event.uid);
-    if (!target) continue;
-    if (event.t === "hit") {
-      const text = event.amount - Math.min(event.blocked, event.amount) === 0
-        ? `⛨${event.amount}`
-        : `-${event.amount - event.blocked}`;
-      ui.floatText(target, text, event.blocked >= event.amount ? "block" : "hit");
-    } else if (event.t === "heal") {
-      ui.floatText(target, `+${event.amount}`, "heal");
-    } else if (event.t === "block") {
-      ui.floatText(target, `⛨${event.amount}`, "block");
-    }
-  }
-}
-
-async function endTurn() {
+async function endRound() {
   if (busy || !fight || fight.over) return;
-  if (aiming != null) return stopAiming(); // the button reads Cancel right now
   busy = true;
-  render();
+  renderDuel();
 
-  const events = combat.endTurn(fight);
+  const events = combat.endRound(fight);
   for (const event of events) {
-    if (event.t === "act") {
-      setLog(actionLine(event));
+    if (event.t === "swing") {
+      const who = event.side === "hero" ? "You swing" : "It swings";
+      $("card-detail").textContent = event.landed
+        ? `${who} for ${event.landed}.`
+        : `${who} — ${event.raw ? "all armour." : "nothing."}`;
       await wait(320);
-      continue;
-    }
-    const target = fighterNodes.get(event.uid);
-    if (target && ["hit", "heal", "block", "status"].includes(event.t)) {
-      showEvents([event]);
-      syncFighter(event.uid);
-      await wait(180);
-    }
-    if (event.t === "die") {
-      syncFighter(event.uid);
+    } else if (event.t === "hit") {
+      ui.floatText(event.side === "hero" ? $("duel-hero") : $("foe-card"),
+        `-${event.amount}`, event.pierce ? "poison" : "hit");
+      syncDuel();
+      await wait(220);
+    } else if (event.t === "heal") {
+      ui.floatText(event.side === "hero" ? $("duel-hero") : $("foe-card"), `+${event.amount}`, "heal");
+      syncDuel();
       await wait(200);
+    } else if (event.t === "press") {
+      $("card-detail").textContent = `The dark presses in. ${event.amount} to both of you.`;
+      await wait(320);
     }
   }
 
   busy = false;
-  if (fight.over) return finishFight();
-  setLog("");
-  render();
+  if (fight.over) return finishDuel();
+  renderDuel();
 }
 
-function actionLine(event) {
-  const enemy = fight.enemies.find((e) => e.uid === event.uid);
-  const move = event.move;
-  const name = enemy?.name ?? "It";
-  switch (move.kind) {
-    case "attack": return `${name} attacks.`;
-    case "block": return `${name} braces.`;
-    case "buff": return `${name} swells with power.`;
-    case "status": return `${name} curses you.`;
-    default: return `${name} acts.`;
+/* Updates the bars in place: a full re-render would rebuild the elements and
+   take the floating numbers with them. */
+function syncDuel() {
+  const foeBox = $("foe-card").querySelector(".foe-face");
+  if (foeBox) {
+    foeBox.querySelector(".gauge")?.replaceWith(ui.gauge(fight.foe.hp, fight.foe.maxHp, { kind: "hp" }));
+    foeBox.querySelector(".chips")?.replaceWith(ui.chips(fight.foe.statuses));
+  }
+  const heroBox = $("duel-hero").querySelector(".hero-strip");
+  if (heroBox) {
+    heroBox.querySelector(".gauge")?.replaceWith(ui.gauge(fight.hero.hp, fight.hero.maxHp, { kind: "hp" }));
   }
 }
 
-/* Updates one fighter's bars in place. A full render() would rebuild the
-   element and take the floating number with it. */
-function syncFighter(uid) {
-  const element = fighterNodes.get(uid);
-  if (!element) return;
-  const fighter = uid === "hero" ? fight.hero : fight.enemies.find((e) => e.uid === uid);
-  if (!fighter) return;
-  element.querySelector(".gauge")?.replaceWith(ui.gauge(fighter.hp, fighter.maxHp, { kind: "hp" }));
-  element.querySelector(".chips")?.replaceWith(ui.chips(fighter.statuses, fighter.block));
-  if (!fighter.alive) element.classList.add("is-dead");
-}
-
-function finishFight() {
-  const won = fight.over === "victory";
+function finishDuel() {
+  const won = fight.over === "win";
   current.hp = fight.hero.hp;
+  const foe = fight.foe;
 
   if (!won) {
     run.loseRun(current);
-    const earned = run.bankRun(meta, current);
+    const lore = run.bankRun(meta, current);
     run.saveMeta(meta);
     run.clearRun();
-    return setTimeout(() => openRunOver(false, earned), 700);
+    return setTimeout(() => openRunOver(false, lore, foe.name), 600);
   }
 
-  run.winFight(current, node.type);
+  const gain = run.grantKill(current, foe);
+  const wasKeeper = tile.type === "boss";
+  fight = null;
+  dungeon.clearTile(current.floor, tile);
+  setLog(wasKeeper
+    ? `${foe.name} falls. The stairs are open beneath you.`
+    : `${foe.name} falls. +${gain.xp} XP, +${gain.gold} gold.`);
   run.saveRun(current);
-  setTimeout(() => openReward(), 500);
+  setTimeout(() => (current.pendingLevels > 0 ? openLevelUp() : showMap()), 450);
 }
 
-/* ---------- panels ------------------------------------------------------- */
+/* ---------- levelling ---------------------------------------------------- */
 
-function openReward() {
-  offerCards({
-    title: "Spoils",
-    subtitle: "Read them. Take one, or take none.",
-    choices: run.rewardChoices(current, meta),
-    decline: "Take none",
-  });
-}
-
-/* One screen for every "pick a card" moment: the row reads, a tap zooms, and
-   only the button in the zoom actually adds it to the deck. */
-function offerCards({ title, subtitle, choices, decline }) {
+function openLevelUp() {
+  const options = run.levelOptions(current, meta);
   ui.openPanel((panel) => {
-    panel.append(ui.panelHeader(title, subtitle));
+    panel.append(ui.panelHeader(`Level ${current.level}`, "Take one."));
     const row = ui.el("div", "card-row");
-    for (const choice of choices) {
-      const def = cardDef(choice.id, choice.upgraded);
-      row.append(cardButton(def, {
-        onTap: () => openCardOffer(def, choice),
-      }));
+    for (const option of options) {
+      if (option.kind === "card") {
+        const def = cardDef(option.id, false);
+        const card = ui.cardEl(def, { resName: resName() });
+        card.addEventListener("pointerdown", () => openCardOffer(def, () => takeLevel(option)));
+        row.append(card);
+      } else {
+        const boon = run.boonById(option.boon);
+        const node = ui.el("button", "boon");
+        node.type = "button";
+        node.append(ui.el("b", null, boon.name));
+        node.append(ui.el("span", null, boon.desc));
+        node.addEventListener("pointerdown", () => openBoon(boon, option));
+        row.append(node);
+      }
     }
     panel.append(row);
-    // There is always a way out of a card offer. Declining a reward moves the
-    // run on; backing out of the shrine's offer returns to the shrine, which
-    // still has a Burn and a Leave it alone.
-    panel.append(decline
-      ? button(decline, () => { ui.closeAllPanels(); afterNode(); }, "quiet")
-      : button("Back", () => ui.closePanel(), "quiet"));
   });
 }
 
-function openCardOffer(def, choice) {
+function openBoon(boon, option) {
   ui.openPanel((panel) => {
-    panel.append(ui.zoomCard(def));
-    const mentioned = ui.statusesIn(def);
-    if (mentioned.length) panel.append(ui.statusNotes(mentioned));
-    panel.append(button("Add to deck", () => {
-      run.addCard(current, choice);
-      ui.closeAllPanels();
-      afterNode();
+    panel.append(ui.panelHeader(boon.name, boon.desc));
+    panel.append(button("Take it", () => {
+      if (boon.pick === "burn") {
+        ui.closeAllPanels();
+        return openDeck({
+          title: "Purge",
+          subtitle: "Tap a card to lose it for good.",
+          action: "burn",
+          then: afterLevel,
+        });
+      }
+      run.takeLevelOption(current, option);
+      afterLevel();
     }, "primary"));
     panel.append(button("Back", () => ui.closePanel(), "quiet"));
   });
 }
 
-/* A card in a list, tappable for a closer look. */
-function cardButton(def, { onTap, compact = false } = {}) {
-  const element = ui.cardEl(def, { compact });
-  element.addEventListener("pointerdown", () => (onTap ? onTap() : openCardLook(def)));
-  return element;
+function takeLevel(option) {
+  run.takeLevelOption(current, option);
+  afterLevel();
+}
+
+function afterLevel() {
+  current.pendingLevels -= 1;
+  ui.closeAllPanels();
+  run.saveRun(current);
+  if (current.pendingLevels > 0) return openLevelUp();
+  showMap();
+}
+
+/* ---------- shared panels ------------------------------------------------ */
+
+function cardRow(ids, onTap) {
+  const row = ui.el("div", "card-row");
+  for (const id of ids) {
+    const def = cardDef(id, false);
+    const card = ui.cardEl(def, { resName: resName() });
+    card.addEventListener("pointerdown", () => onTap(id));
+    row.append(card);
+  }
+  return row;
+}
+
+function openCardOffer(def, take, label = "Add to deck", enabled = true) {
+  ui.openPanel((panel) => {
+    panel.append(ui.zoomCard(def, resName()));
+    const mentioned = ui.statusesIn(def);
+    if (mentioned.length) panel.append(ui.statusNotes(mentioned));
+    if (enabled) panel.append(button(label, take, "primary"));
+    else panel.append(ui.el("p", "panel__body", "Not enough gold."));
+    panel.append(button("Back", () => ui.closePanel(), "quiet"));
+  });
 }
 
 function openCardLook(def) {
   ui.openPanel((panel) => {
-    panel.append(ui.zoomCard(def));
+    panel.append(ui.zoomCard(def, resName()));
     const mentioned = ui.statusesIn(def);
     if (mentioned.length) panel.append(ui.statusNotes(mentioned));
     panel.append(button("Back", () => ui.closePanel(), "quiet"));
   });
 }
 
-function openCamp() {
-  ui.openPanel((panel) => {
-    const healed = Math.min(current.maxHp - current.hp, Math.round(current.maxHp * 0.4));
-    panel.append(ui.panelHeader("Camp", `${current.hp}/${current.maxHp} HP`));
-    panel.append(button(`Rest · heal ${healed}`, () => {
-      run.restHeal(current);
-      ui.closeAllPanels();
-      afterNode();
-    }, "primary"));
-    panel.append(button("Sharpen · upgrade a card", () => openDeck({
-      title: "Upgrade",
-      subtitle: "Tap a card to see what it becomes.",
-      filter: (card) => run.canUpgrade(card),
-      action: "upgrade",
-    })));
-    panel.append(button("Back", () => ui.closePanel(), "quiet"));
-  });
-}
-
-function openShrine() {
-  ui.openPanel((panel) => {
-    panel.append(ui.panelHeader("Shrine", "The stone wants a trade."));
-    panel.append(button("Take a card", () => offerCards({
-      title: "Offerings",
-      subtitle: "Tap one to read it.",
-      choices: run.shrineChoices(current),
-    }), "primary"));
-    panel.append(button("Burn a card", () => openDeck({
-      title: "Burn",
-      subtitle: "Tap a card to remove it from the deck for good.",
-      action: "burn",
-    })));
-    panel.append(button("Leave it alone", () => { ui.closeAllPanels(); afterNode(); }, "quiet"));
-  });
-}
-
-/* The deck list, used for browsing, upgrading and burning. Every card here
-   opens for a look first; `action` decides what the button in that look
-   offers to do. */
-function openDeck({ title = "Deck", subtitle, filter, action } = {}) {
+function openDeck({ title = "Deck", subtitle, filter, action, price = 0, then = null } = {}) {
   ui.openPanel((panel) => {
     panel.append(ui.panelHeader(title, subtitle ?? `${current.deck.length} cards`));
     const grid = ui.el("div", "deck-grid");
     current.deck.forEach((card, index) => {
       const def = combat.defOf(card);
       const allowed = !filter || filter(card);
-      const element = ui.cardEl(def, { affordable: allowed, compact: true });
-      element.addEventListener("pointerdown", () => openDeckCard(index, def, action, allowed));
+      const element = ui.cardEl(def, { affordable: allowed, compact: true, resName: resName() });
+      element.addEventListener("pointerdown", () => openDeckCard(index, def, action, allowed, price, then));
       grid.append(element);
     });
     panel.append(grid);
@@ -645,27 +718,28 @@ function openDeck({ title = "Deck", subtitle, filter, action } = {}) {
   });
 }
 
-function openDeckCard(index, def, action, allowed = true) {
+function openDeckCard(index, def, action, allowed, price, then) {
   ui.openPanel((panel) => {
-    panel.append(ui.zoomCard(def));
-
+    panel.append(ui.zoomCard(def, resName()));
     if (action && !allowed) {
       panel.append(ui.el("p", "panel__body", "This one is already as good as it gets."));
     } else if (action === "upgrade") {
-      const card = current.deck[index];
-      const better = cardDef(card.id, true);
+      const better = cardDef(current.deck[index].id, true);
       panel.append(ui.el("p", "panel__sub", "Becomes"));
-      panel.append(ui.zoomCard(better));
-      panel.append(button("Upgrade this card", () => {
+      panel.append(ui.zoomCard(better, resName()));
+      panel.append(button("Temper it", () => {
         run.upgradeCard(current, index);
-        ui.closeAllPanels();
-        afterNode();
+        setLog(`${better.name}.`);
+        if (then) return then();
+        finishRoom();
       }, "primary"));
     } else if (action === "burn") {
-      panel.append(button("Burn this card", () => {
+      panel.append(button(price ? `Burn it · ${price}g` : "Burn it", () => {
+        if (price && !run.spend(current, price)) return;
         run.removeCard(current, index);
-        ui.closeAllPanels();
-        afterNode();
+        setLog(`${def.name} is ash.`);
+        if (then) return then();
+        finishRoom();
       }, "primary"));
     } else {
       const mentioned = ui.statusesIn(def);
@@ -675,21 +749,20 @@ function openDeckCard(index, def, action, allowed = true) {
   });
 }
 
-/* The deck screen is the one place with room to say what Vuln actually does,
-   so the rules for every status live at the bottom of it. */
 function statusLegend() {
   const list = ui.statusNotes(Object.keys(STATUSES));
   list.prepend(ui.el("h3", "legend__title", "Statuses"));
   return list;
 }
 
-function openRunOver(cleared, earned) {
+function openRunOver(cleared, lore, killer) {
   ui.openPanel((panel) => {
     panel.append(ui.panelHeader(
       cleared ? "The Vault opens" : "You fall",
-      cleared ? "Three floors, cleared." : `Floor ${current.floor + 1}, ${FLOORS[current.floor].name}.`
+      cleared ? "Three floors, cleared." : `${killer} finished it, on floor ${current.floorIndex + 1}.`
     ));
-    panel.append(ui.el("p", "panel__body", `${earned} Echoes carried back to the Sanctum.`));
+    panel.append(ui.el("p", "panel__body",
+      `Level ${current.level} · ${current.kills} kills · ${lore} Lore carried back.`));
     panel.append(button("To the Sanctum", () => {
       ui.closeAllPanels();
       current = null;
@@ -712,21 +785,6 @@ function button(label, onTap, variant) {
   return element;
 }
 
-/* ---------- moving on ---------------------------------------------------- */
-
-function afterNode() {
-  fight = null;
-  run.advance(current);
-  if (current.over === "cleared") {
-    const earned = run.bankRun(meta, current);
-    run.saveMeta(meta);
-    run.clearRun();
-    return openRunOver(true, earned);
-  }
-  run.saveRun(current);
-  showPath();
-}
-
 /* ---------- wiring ------------------------------------------------------- */
 
 buildTitleArt();
@@ -738,13 +796,25 @@ $("btn-continue").addEventListener("pointerdown", () => {
   const saved = run.loadRun();
   if (!saved) return showTitle();
   current = saved;
-  showPath();
+  setLog("");
+  showMap();
 });
 $("btn-deck").addEventListener("pointerdown", () => openDeck({}));
-$("btn-end-turn").addEventListener("pointerdown", endTurn);
+$("btn-legend").addEventListener("pointerdown", () => ui.openPanel((panel) => {
+  panel.append(ui.panelHeader("Statuses", "What the chips mean."));
+  panel.append(ui.statusNotes(Object.keys(STATUSES)));
+  panel.append(button("Back", () => ui.closePanel(), "quiet"));
+}));
+$("btn-potion").addEventListener("pointerdown", () => {
+  const healed = run.drinkPotion(current);
+  if (healed) setLog(`Potion. +${healed} HP.`);
+  showMap();
+});
+$("btn-end-round").addEventListener("pointerdown", endRound);
+$("foe-card").addEventListener("pointerdown", openFoe);
 
 // Rotating the phone changes how much room the hand has.
-window.addEventListener("resize", () => { if (fight && !busy) render(); });
+window.addEventListener("resize", () => { if (fight && !busy) renderDuel(); });
 
 for (const back of document.querySelectorAll("[data-back]")) {
   back.addEventListener("pointerdown", () => {

@@ -1,25 +1,25 @@
-/* The fight engine.
+/* The duel.
 
-   No DOM in here. playCard() and endTurn() mutate the state and hand back a
-   flat list of events describing what happened, in order; the UI replays that
-   list with animation and the balance simulator ignores it entirely. That
-   split is what makes tools/deck-sim.mjs able to play a thousand runs in
-   Node - the rules never wait on a transition to finish. */
+   One monster, one hero, and two decks. A round runs in this order:
 
-import { cardDef, ENEMIES, HAND_SIZE, MAX_ENERGY, STATUSES } from "./data.js";
+     1. the monster draws its hand and plays all of it, face up
+     2. you draw to your hand size and play what you like - knowing exactly
+        what is coming, because it has already committed
+     3. both swings land: your Attack less its Defense, then its Attack less
+        your Defense. You strike first, so killing it means never being hit.
+
+   Attack and Defense are pools that empty every round; the class resource
+   (Rage, Mana, Venom) is not, which is what makes banking it a decision.
+
+   No DOM in here. tools/deck-sim.mjs plays thousands of these in Node. */
+
+import { CARDS, FOES, FOE_CARDS, PATIENCE, cardDef } from "./data.js";
 
 let nextUid = 1;
 const uid = (prefix) => `${prefix}${nextUid++}`;
 
-/* Every card in a deck is an instance: same printed card, own upgrade state,
-   own identity in the discard pile. */
-export function makeCard(id, upgraded = false) {
-  return { uid: uid("c"), id, upgraded: !!upgraded };
-}
-
-export function defOf(card) {
-  return cardDef(card.id, card.upgraded);
-}
+export const makeCard = (id, upgraded = false) => ({ uid: uid("c"), id, upgraded: !!upgraded });
+export const defOf = (card) => cardDef(card.id, card.upgraded);
 
 function shuffle(list, rng) {
   for (let i = list.length - 1; i > 0; i--) {
@@ -30,361 +30,279 @@ function shuffle(list, rng) {
 }
 
 const roll = (range, rng) => range[0] + Math.floor(rng() * (range[1] - range[0] + 1));
+export const stackOf = (who, status) => who.statuses[status] || 0;
 
-export const livingEnemies = (state) => state.enemies.filter((e) => e.alive);
+/* ---------- setting up --------------------------------------------------- */
 
-export function findTarget(state, uid) {
-  if (state.hero.uid === uid) return state.hero;
-  return state.enemies.find((e) => e.uid === uid);
-}
-
-function makeEnemy(key, rng, label) {
-  const def = ENEMIES[key];
-  const hp = roll(def.hp, rng);
+export function makeFoe(key, { elite = false, scale = null, rng = Math.random } = {}) {
+  const def = FOES[key];
+  const mult = elite && scale ? scale : null;
+  const hp = Math.round(roll(def.hp, rng) * (mult ? mult.hp : 1));
   return {
-    uid: uid("e"),
     key,
-    name: label || def.name,
+    side: "foe",
+    name: elite ? `Dire ${def.name}` : def.name,
     sprite: def.sprite,
-    side: "enemy",
     boss: !!def.boss,
+    elite,
     hp,
     maxHp: hp,
-    block: 0,
+    attack: 0,
+    defense: 0,
     statuses: {},
     alive: true,
-    step: 0,
-    intent: null,
+    draws: def.draws + (mult ? mult.draws : 0),
+    deck: def.deck.slice(),
+    draw: [],
+    discard: [],
+    played: [],
+    xp: Math.round(def.xp * (mult ? mult.xp : 1)),
+    gold: Math.round(roll(def.gold, rng) * (mult ? mult.gold : 1)),
   };
 }
 
-/* Two of the same monster get A/B suffixes so the player can say which one
-   they mean. */
-function buildEnemies(keys, rng) {
-  const counts = {};
-  keys.forEach((k) => { counts[k] = (counts[k] || 0) + 1; });
-  const seen = {};
-  return keys.map((k) => {
-    if (counts[k] === 1) return makeEnemy(k, rng);
-    seen[k] = (seen[k] || 0) + 1;
-    return makeEnemy(k, rng, `${ENEMIES[k].name} ${"ABCD"[seen[k] - 1]}`);
-  });
-}
-
-export function startCombat({ hero, deck, enemies, rng = Math.random, extraDraw = 0 }) {
+export function startCombat({ hero, deck, foe, rng = Math.random }) {
   const state = {
     rng,
-    turn: 0,
-    over: null,
-    extraDraw, // Reserve unlock: only spent on the first turn
+    round: 0,
+    over: null, // 'win' | 'lose'
+    log: [],
     hero: {
-      uid: "hero",
       side: "hero",
       name: hero.name,
       sprite: hero.sprite,
       hp: hero.hp,
       maxHp: hero.maxHp,
-      block: 0,
-      energy: 0,
-      maxEnergy: hero.maxEnergy || MAX_ENERGY,
+      attack: 0,
+      defense: 0,
+      res: hero.startRes || 0,
+      resName: hero.resName,
+      ragePerRound: !!hero.ragePerRound,
+      handSize: hero.hand,
       statuses: {},
       alive: true,
+      hurtThisRound: false,
     },
-    enemies: buildEnemies(enemies, rng),
+    foe,
     draw: shuffle(deck.map((c) => makeCard(c.id, c.upgraded)), rng),
     hand: [],
     discard: [],
-    exhausted: [],
+    playedThisRound: 0,
   };
-  for (const enemy of state.enemies) planIntent(state, enemy);
-  beginTurn(state);
+  state.foe.draw = shuffle(state.foe.deck.slice(), rng);
+  beginRound(state);
   return state;
 }
 
-/* ---------- statuses ---------------------------------------------------- */
+/* ---------- rounds ------------------------------------------------------- */
 
-export const stackOf = (fighter, status) => fighter.statuses[status] || 0;
-
-function addStatus(state, fighter, status, amount, events) {
-  if (!fighter.alive || amount <= 0) return;
-  fighter.statuses[status] = stackOf(fighter, status) + amount;
-  events.push({ t: "status", uid: fighter.uid, status, amount });
-}
-
-/* Timers tick down at the end of their owner's turn; stacks (poison) and
-   powers (Strength and friends) are handled elsewhere. Driven off STATUSES so
-   adding a status to the data cannot quietly leave it permanent. */
-const TIMERS = Object.entries(STATUSES).filter(([, s]) => s.decay === "turn").map(([id]) => id);
-
-function decayTimers(fighter) {
-  for (const status of TIMERS) {
-    if (fighter.statuses[status] > 0 && --fighter.statuses[status] <= 0) {
-      delete fighter.statuses[status];
-    }
-  }
-}
-
-/* ---------- damage ------------------------------------------------------ */
-
-function outgoing(attacker, amount) {
-  let value = amount + stackOf(attacker, "strength");
-  if (stackOf(attacker, "weak") > 0) value *= 0.75;
-  return Math.max(0, Math.floor(value));
-}
-
-function dealDamage(state, attacker, target, raw, events) {
-  if (!target.alive) return 0;
-  let amount = raw;
-  if (stackOf(target, "vulnerable") > 0) amount = Math.floor(amount * 1.5);
-
-  const blocked = Math.min(target.block, amount);
-  target.block -= blocked;
-  const through = amount - blocked;
-  target.hp = Math.max(0, target.hp - through);
-  events.push({ t: "hit", uid: target.uid, amount, blocked, hp: target.hp });
-
-  // Thorns answer the attack itself, so they bite even when the hit was
-  // fully blocked.
-  if (attacker && stackOf(target, "thorns") > 0) {
-    const spikes = stackOf(target, "thorns");
-    const soaked = Math.min(attacker.block, spikes);
-    attacker.block -= soaked;
-    attacker.hp = Math.max(0, attacker.hp - (spikes - soaked));
-    events.push({ t: "hit", uid: attacker.uid, amount: spikes, blocked: soaked, hp: attacker.hp, thorns: true });
-    checkDeath(state, attacker, events);
-  }
-
-  checkDeath(state, target, events);
-  return through;
-}
-
-function loseHp(state, fighter, amount, events) {
-  if (!fighter.alive || amount <= 0) return;
-  fighter.hp = Math.max(0, fighter.hp - amount);
-  events.push({ t: "hit", uid: fighter.uid, amount, blocked: 0, hp: fighter.hp, poison: true });
-  checkDeath(state, fighter, events);
-}
-
-function heal(state, fighter, amount, events) {
-  if (!fighter.alive) return;
-  const before = fighter.hp;
-  fighter.hp = Math.min(fighter.maxHp, fighter.hp + amount);
-  if (fighter.hp !== before) events.push({ t: "heal", uid: fighter.uid, amount: fighter.hp - before });
-}
-
-function checkDeath(state, fighter, events) {
-  if (fighter.hp > 0 || !fighter.alive) return;
-  fighter.alive = false;
-  events.push({ t: "die", uid: fighter.uid });
-  if (fighter.side === "hero") finish(state, "defeat", events);
-  else if (!livingEnemies(state).length) finish(state, "victory", events);
-}
-
-function finish(state, result, events) {
-  if (state.over) return;
-  state.over = result;
-  events.push({ t: "over", result });
-}
-
-/* ---------- the draw pile ----------------------------------------------- */
-
-function drawCards(state, count, events) {
+function drawFor(state, count, events) {
   for (let i = 0; i < count; i++) {
     if (!state.draw.length) {
-      if (!state.discard.length) return; // deck genuinely exhausted
+      if (!state.discard.length) return;
       state.draw = shuffle(state.discard, state.rng);
       state.discard = [];
       events.push({ t: "reshuffle" });
     }
     state.hand.push(state.draw.pop());
-    events.push({ t: "draw" });
   }
 }
 
-/* ---------- turns ------------------------------------------------------- */
+function foeDraw(state) {
+  if (!state.foe.draw.length) {
+    state.foe.draw = shuffle(state.foe.discard, state.rng);
+    state.foe.discard = [];
+  }
+  return state.foe.draw.pop();
+}
 
-function beginTurn(state) {
+function beginRound(state) {
   const events = [];
-  const hero = state.hero;
-  state.turn += 1;
-  hero.block = 0;
-  hero.energy = hero.maxEnergy + stackOf(hero, "surge");
+  const { hero, foe } = state;
+  state.round += 1;
+  state.playedThisRound = 0;
+  hero.hurtThisRound = false;
 
-  if (stackOf(hero, "regen") > 0) heal(state, hero, stackOf(hero, "regen"), events);
-  if (stackOf(hero, "rampart") > 0) {
-    hero.block += stackOf(hero, "rampart");
-    events.push({ t: "block", uid: hero.uid, amount: stackOf(hero, "rampart") });
-  }
-  if (stackOf(hero, "poison") > 0) {
-    loseHp(state, hero, stackOf(hero, "poison"), events);
-    hero.statuses.poison -= 1;
-    if (hero.statuses.poison <= 0) delete hero.statuses.poison;
-  }
-  if (state.over) return events;
+  hero.attack = stackOf(hero, "edge");
+  hero.defense = 0;
+  foe.attack = stackOf(foe, "edge");
+  foe.defense = 0;
+  delete hero.statuses.soften;
+  if (stackOf(hero, "flow") > 0) hero.res += stackOf(hero, "flow");
 
-  const bonus = state.turn === 1 ? state.extraDraw : 0;
-  drawCards(state, HAND_SIZE + bonus, events);
-  events.push({ t: "turn", n: state.turn });
+  // The monster commits first, in the open.
+  foe.played = [];
+  for (let i = 0; i < foe.draws; i++) {
+    const id = foeDraw(state);
+    if (!id) break;
+    const card = FOE_CARDS[id];
+    foe.discard.push(id);
+    foe.played.push(card.name);
+    for (const effect of card.effects) applyEffect(state, foe, hero, effect, events);
+  }
+  events.push({ t: "foeTurn", cards: foe.played.slice() });
+
+  drawFor(state, hero.handSize, events);
+  events.push({ t: "round", n: state.round });
   return events;
 }
 
-export function endTurn(state) {
-  if (state.over) return [];
-  const events = [];
+/* ---------- effects ------------------------------------------------------ */
 
-  // Everything left in hand is discarded; nothing is retained between turns.
-  state.discard.push(...state.hand);
-  state.hand = [];
-  decayTimers(state.hero);
-
-  for (const enemy of state.enemies) {
-    if (!enemy.alive || state.over) continue;
-
-    if (stackOf(enemy, "poison") > 0) {
-      loseHp(state, enemy, stackOf(enemy, "poison"), events);
-      enemy.statuses.poison -= 1;
-      if (enemy.statuses.poison <= 0) delete enemy.statuses.poison;
-      if (!enemy.alive) continue;
-    }
-    if (state.over) break;
-
-    enemy.block = 0;
-    takeEnemyTurn(state, enemy, events);
-    decayTimers(enemy);
-  }
-
-  if (state.over) return events;
-
-  for (const enemy of livingEnemies(state)) planIntent(state, enemy);
-  return events.concat(beginTurn(state));
+function addStatus(who, status, amount) {
+  if (amount <= 0) return;
+  who.statuses[status] = stackOf(who, status) + amount;
 }
 
-function takeEnemyTurn(state, enemy, events) {
-  const move = enemy.intent;
-  if (!move) return;
-  events.push({ t: "act", uid: enemy.uid, move });
-
-  switch (move.kind) {
+function applyEffect(state, source, target, effect, events) {
+  switch (effect.kind) {
     case "attack": {
-      const hits = move.times || 1;
-      for (let i = 0; i < hits && !state.over; i++) {
-        dealDamage(state, enemy, state.hero, outgoing(enemy, move.amount), events);
-      }
+      let amount = effect.scale === "defense"
+        ? source.defense + (effect.bonus || 0)
+        : effect.amount;
+      if (effect.plusIfPoisoned && stackOf(target, "poison") > 0) amount += effect.plusIfPoisoned;
+      source.attack += amount;
       break;
     }
-    case "block":
-      enemy.block += move.amount;
-      events.push({ t: "block", uid: enemy.uid, amount: move.amount });
+    case "defense": source.defense += effect.amount; break;
+    case "res": source.res = (source.res || 0) + effect.amount; break;
+    case "draw": drawFor(state, effect.amount, events); break;
+    case "heal": {
+      const before = source.hp;
+      source.hp = Math.min(source.maxHp, source.hp + effect.amount);
+      if (source.hp !== before) events.push({ t: "heal", side: source.side, amount: source.hp - before });
       break;
-    case "status":
-      addStatus(state, state.hero, move.status, move.amount, events);
+    }
+    case "poison": addStatus(target, "poison", effect.amount); break;
+    // The monster has already played, so shaving its swing takes effect now;
+    // shaving yours has to wait for the resolution, hence Soften.
+    case "weaken":
+      if (target.side === "foe") target.attack = Math.max(0, target.attack - effect.amount);
+      else addStatus(target, "soften", effect.amount);
       break;
-    case "buff":
-      addStatus(state, enemy, move.status, move.amount, events);
-      break;
+    case "thorns": addStatus(source, "thorns", effect.amount); break;
+    case "edge": addStatus(source, "edge", effect.amount); source.attack += effect.amount; break;
+    case "regen": addStatus(source, "regen", effect.amount); break;
+    case "flow": addStatus(source, "flow", effect.amount); source.res += effect.amount; break;
   }
 }
 
-function planIntent(state, enemy) {
-  const def = ENEMIES[enemy.key];
-  const index = def.pattern
-    ? def.pattern[enemy.step % def.pattern.length]
-    : Math.floor(state.rng() * def.moves.length);
-  enemy.step += 1;
-  enemy.intent = def.moves[index];
-}
-
-/* What the player sees above a monster's head: the actual damage it will do,
-   Strength and Weak already folded in, so the number never lies. */
-export function intentPreview(enemy) {
-  const move = enemy.intent;
-  if (!move) return null;
-  if (move.kind === "attack") {
-    return { kind: "attack", amount: outgoing(enemy, move.amount), times: move.times || 1 };
-  }
-  return { kind: move.kind, status: move.status, amount: move.amount };
-}
-
-/* ---------- playing a card ---------------------------------------------- */
+/* ---------- playing a card ----------------------------------------------- */
 
 export function canPlay(state, card) {
   if (state.over) return false;
-  return state.hero.energy >= defOf(card).cost;
+  return (defOf(card).cost || 0) <= state.hero.res;
 }
 
-export function needsTarget(card) {
-  const def = defOf(card);
-  return def.target === "enemy";
-}
-
-export function playCard(state, handIndex, targetUid) {
-  const card = state.hand[handIndex];
+export function playCard(state, index, modeIndex = 0) {
+  const card = state.hand[index];
   if (!card || state.over) return [];
   const def = defOf(card);
-  if (state.hero.energy < def.cost) return [];
-
-  const target = targetUid ? findTarget(state, targetUid) : null;
-  if (def.target === "enemy" && (!target || !target.alive)) return [];
+  const cost = def.cost || 0;
+  if (cost > state.hero.res) return [];
 
   const events = [];
-  state.hero.energy -= def.cost;
-  state.hand.splice(handIndex, 1);
-  events.push({ t: "play", card: card.uid, name: def.name });
+  state.hero.res -= cost;
+  state.hand.splice(index, 1);
+  state.discard.push(card);
+  state.playedThisRound += 1;
 
-  for (const effect of def.effects) {
-    if (state.over) break;
-    applyEffect(state, effect, target, events);
-  }
-
-  if (def.exhaust) state.exhausted.push(card);
-  else state.discard.push(card);
-
+  const effects = def.modes ? def.modes[modeIndex]?.effects ?? def.modes[0].effects : def.effects;
+  for (const effect of effects) applyEffect(state, state.hero, state.foe, effect, events);
+  events.push({ t: "play", name: def.name });
   return events;
 }
 
-function applyEffect(state, effect, target, events) {
-  const hero = state.hero;
-  switch (effect.kind) {
-    case "damage": {
-      const targets = effect.all ? livingEnemies(state) : [target];
-      const times = effect.times || 1;
-      for (let i = 0; i < times; i++) {
-        for (const each of effect.random ? [randomEnemy(state)] : targets) {
-          if (!each || !each.alive || state.over) continue;
-          let base = effect.scale === "block" ? hero.block + (effect.bonus || 0) : effect.amount;
-          if (effect.bonusIfPoisoned && stackOf(each, "poison") > 0) base += effect.bonusIfPoisoned;
-          dealDamage(state, hero, each, outgoing(hero, base), events);
-        }
-      }
-      break;
-    }
-    case "block":
-      hero.block += effect.amount;
-      events.push({ t: "block", uid: hero.uid, amount: effect.amount });
-      break;
-    case "draw":
-      drawCards(state, effect.amount, events);
-      break;
-    case "energy":
-      hero.energy += effect.amount;
-      events.push({ t: "energy", amount: effect.amount });
-      break;
-    case "heal":
-      heal(state, hero, effect.amount, events);
-      break;
-    case "status": {
-      const targets = effect.all ? livingEnemies(state) : [target];
-      for (const each of targets) addStatus(state, each, effect.status, effect.amount, events);
-      break;
-    }
-    case "buff":
-      addStatus(state, hero, effect.status, effect.amount, events);
-      break;
+/* ---------- ending the round --------------------------------------------- */
+
+function hurt(state, target, amount, events, { pierce = false, from = null } = {}) {
+  if (amount <= 0) return 0;
+  target.hp = Math.max(0, target.hp - amount);
+  events.push({ t: "hit", side: target.side, amount, pierce });
+  if (target.side === "hero") state.hero.hurtThisRound = true;
+  if (from && stackOf(target, "thorns") > 0) {
+    const spikes = stackOf(target, "thorns");
+    from.hp = Math.max(0, from.hp - spikes);
+    events.push({ t: "hit", side: from.side, amount: spikes, thorns: true });
   }
+  return amount;
 }
 
-function randomEnemy(state) {
-  const alive = livingEnemies(state);
-  if (!alive.length) return null;
-  return alive[Math.floor(state.rng() * alive.length)];
+export function endRound(state) {
+  if (state.over) return [];
+  const events = [];
+  const { hero, foe } = state;
+
+  state.discard.push(...state.hand);
+  state.hand = [];
+
+  // You swing first: a monster killed outright never gets to answer.
+  const swing = Math.max(0, hero.attack - stackOf(hero, "soften"));
+  const landed = Math.max(0, swing - foe.defense);
+  events.push({ t: "swing", side: "hero", raw: swing, blocked: Math.min(swing, foe.defense), landed });
+  if (landed > 0) hurt(state, foe, landed, events, { from: hero });
+
+  if (foe.hp <= 0) {
+    foe.alive = false;
+    state.over = "win";
+    events.push({ t: "over", result: "win" });
+    return events;
+  }
+
+  const back = Math.max(0, foe.attack - hero.defense);
+  events.push({ t: "swing", side: "foe", raw: foe.attack, blocked: Math.min(foe.attack, hero.defense), landed: back });
+  if (foe.attack > 0) hurt(state, hero, back, events, { from: foe });
+
+  // End-of-round upkeep: poison bites through armour, regen mends.
+  for (const who of [foe, hero]) {
+    const poison = stackOf(who, "poison");
+    if (poison > 0) {
+      hurt(state, who, poison, events, { pierce: true });
+      who.statuses.poison -= 1;
+      if (who.statuses.poison <= 0) delete who.statuses.poison;
+    }
+    const regen = stackOf(who, "regen");
+    if (regen > 0 && who.hp > 0) {
+      const before = who.hp;
+      who.hp = Math.min(who.maxHp, who.hp + regen);
+      if (who.hp !== before) events.push({ t: "heal", side: who.side, amount: who.hp - before });
+    }
+  }
+
+  // Neither of you can outlast the dungeon itself.
+  if (state.round > PATIENCE) {
+    const press = state.round - PATIENCE;
+    events.push({ t: "press", amount: press });
+    hurt(state, foe, press, events, { pierce: true });
+    if (hero.hp > 0) hurt(state, hero, press, events, { pierce: true });
+  }
+
+  // A Knight banks Rage simply for still being there, and faster for having
+  // been hit - the class wants the fight to go one round longer.
+  if (hero.ragePerRound && hero.hp > 0) hero.res += hero.hurtThisRound ? 2 : 1;
+
+  if (foe.hp <= 0) {
+    foe.alive = false;
+    state.over = "win";
+    events.push({ t: "over", result: "win" });
+    return events;
+  }
+  if (hero.hp <= 0) {
+    hero.alive = false;
+    state.over = "lose";
+    events.push({ t: "over", result: "lose" });
+    return events;
+  }
+
+  return events.concat(beginRound(state));
 }
+
+/* What the monster is holding, for the inspector: its whole deck, which is
+   the only honest way to show a duellist's intentions. */
+export function foeDeckList(foe) {
+  const counts = new Map();
+  for (const id of FOES[foe.key].deck) counts.set(id, (counts.get(id) || 0) + 1);
+  return [...counts].map(([id, n]) => ({ name: FOE_CARDS[id].name, n, effects: FOE_CARDS[id].effects }));
+}
+
+export const KNOWN_CARDS = new Set(Object.keys(CARDS));

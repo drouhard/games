@@ -23,7 +23,7 @@
     <section class="screen is-active" data-screen="title">
       <div class="title-block">
         <h1 class="logo">DECK<span>DELVE</span></h1>
-        <p class="tagline">A deckbuilding descent</p>
+        <p class="tagline">Walk the fog. Duel the deck.</p>
         <div class="title-art" id="title-art" aria-hidden="true"></div>
       </div>
       <div class="title-menu">
@@ -39,7 +39,7 @@
       <header class="bar">
         <button class="icon-button" data-back="title" type="button" aria-label="Title screen">‹</button>
         <span class="bar__title">Sanctum</span>
-        <span class="echoes"><b id="sanctum-echoes">0</b> ✦</span>
+        <span class="echoes"><b id="sanctum-lore">0</b> ✦</span>
       </header>
       <div class="scroller">
         <p class="blurb" id="sanctum-stats"></p>
@@ -47,7 +47,7 @@
       </div>
     </section>
 
-    <!-- ---------- choose a class ---------- -->
+    <!-- ---------- choose a delver ---------- -->
     <section class="screen" data-screen="pick">
       <header class="bar">
         <button class="icon-button" data-back="title" type="button" aria-label="Title screen">‹</button>
@@ -56,37 +56,49 @@
       <div class="scroller" id="class-list"></div>
     </section>
 
-    <!-- ---------- the path ---------- -->
-    <section class="screen" data-screen="path">
+    <!-- ---------- the dungeon floor ---------- -->
+    <section class="screen" data-screen="map">
       <header class="bar">
         <button class="icon-button" data-back="title" type="button" aria-label="Leave for the title screen">‹</button>
-        <span class="bar__title" id="path-title">The Cistern</span>
-        <button class="chip-button" id="btn-deck" type="button">Deck <b id="deck-count">10</b></button>
+        <span class="bar__title" id="map-title">The Cistern</span>
+        <span class="bar__meta" id="map-left"></span>
       </header>
-      <div class="path-body">
-        <div class="hero-slot" id="path-hero"></div>
-        <p class="path-prompt" id="path-prompt">Two ways on. Pick one.</p>
-        <div class="path-options" id="path-options"></div>
+
+      <div class="map-wrap">
+        <div class="grid" id="grid"></div>
+      </div>
+
+      <div class="map-foot">
+        <p class="log" id="map-log" aria-live="polite"></p>
+        <div class="hero-slot" id="map-hero"></div>
+        <div class="map-actions">
+          <button class="chip-button" id="btn-deck" type="button">Deck <b id="deck-count">8</b></button>
+          <button class="chip-button" id="btn-potion" type="button">Potion <b id="potion-count">0</b></button>
+          <button class="chip-button" id="btn-legend" type="button">Statuses</button>
+        </div>
       </div>
     </section>
 
-    <!-- ---------- a fight ---------- -->
-    <section class="screen" data-screen="battle">
+    <!-- ---------- a duel ---------- -->
+    <section class="screen" data-screen="duel">
       <header class="bar">
-        <span class="bar__title" id="battle-title">Fight</span>
-        <span class="bar__meta">Turn <b id="battle-turn">1</b></span>
+        <span class="bar__title" id="duel-title">Cinder Mote</span>
+        <span class="bar__meta">Round <b id="duel-round">1</b></span>
       </header>
 
-      <div class="field" id="enemy-row"></div>
+      <div class="arena">
+        <button class="foe" id="foe-card" type="button"></button>
+      </div>
 
       <div class="controls">
-        <p class="log" id="battle-log" aria-live="polite"></p>
-        <div class="hero-slot" id="battle-hero"></div>
+        <p class="tell" id="foe-tell" aria-live="polite"></p>
+        <div class="scales" id="scales"></div>
+        <div class="hero-slot" id="duel-hero"></div>
         <p class="card-detail" id="card-detail"></p>
         <div class="hand" id="hand"></div>
         <div class="battle-actions">
           <span class="pile">Draw <b id="pile-draw">0</b></span>
-          <button class="rpg-button rpg-button--primary" id="btn-end-turn" type="button">End Turn</button>
+          <button class="rpg-button rpg-button--primary" id="btn-end-round" type="button">End Round</button>
           <span class="pile">Used <b id="pile-discard">0</b></span>
         </div>
       </div>

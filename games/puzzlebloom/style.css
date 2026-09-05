@@ -1,0 +1,770 @@
+/* Puzzlebloom is the one game here that is not dark. base.css sets a navy
+   scheme for arcade games; this one is painted on paper, so it overrides the
+   variables rather than fighting them. Everything else in base.css - the safe
+   areas, the no-scroll body, the tap fixes - is inherited unchanged. */
+
+:root {
+  --bg: #fbf5ea;
+  --surface: #fffdf7;
+  --surface-lit: #f4ead6;
+  --accent: #c9899b;
+  --accent-strong: #b8697f;
+  --text: #4b4038;
+  --text-dim: #8d7f70;
+  --line: #e3d8c4;
+  --good: #6f9d78;
+  --bad: #c47a6a;
+  --radius: 18px;
+}
+
+body {
+  /* The paper. The grain is a data-uri svg, so the browser rasterises the
+     turbulence once and reuses it - a live filter over the whole viewport is
+     the one thing that makes this look sluggish on a phone. */
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(120% 90% at 12% 0%, #fffdf6 0%, rgba(255, 253, 246, 0) 60%),
+    radial-gradient(100% 80% at 90% 100%, #f7ecdb 0%, rgba(247, 236, 219, 0) 55%),
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='g'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4'/><feColorMatrix type='saturate' values='0'/></filter><rect width='140' height='140' filter='url(%23g)' opacity='0.05'/></svg>");
+  font-family: ui-rounded, "SF Pro Rounded", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+#defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+.screen {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.pb-art {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* ---------- the garden ---------- */
+
+.garden {
+  padding: 0.5rem 1rem 1rem;
+  gap: 0.6rem;
+}
+
+.garden__top {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: none;
+}
+
+.icon-button {
+  background: var(--surface);
+  color: var(--text-dim);
+  box-shadow: 0 1px 0 var(--line);
+}
+
+.purse {
+  display: flex;
+  gap: 0.9rem;
+  margin-left: auto;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+.purse__mark {
+  color: var(--accent);
+  margin-right: 0.25rem;
+}
+
+.garden__hero {
+  flex: none;
+  text-align: center;
+}
+
+.garden__hero h1 {
+  margin: 0;
+  font-size: clamp(1.7rem, 7vw, 2.3rem);
+  letter-spacing: -0.02em;
+  color: var(--accent-strong);
+}
+
+.garden__hero p {
+  margin: 0.15rem 0 0;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+.go {
+  flex: none;
+  align-self: center;
+  font-size: 1.05rem;
+  box-shadow: 0 3px 0 #96536a;
+}
+
+.go:active {
+  box-shadow: 0 1px 0 #96536a;
+}
+
+.garden__label {
+  flex: none;
+  margin: 0.2rem 0 0;
+  text-align: center;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+/* The one list in the game allowed to scroll, because eleven cards will not
+   fit a phone and hiding half of them would be worse. */
+.hosts {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: 0.6rem;
+  align-content: start;
+  padding-bottom: 0.5rem;
+}
+
+.host {
+  display: grid;
+  grid-template-columns: 3.4rem 1fr;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 1px 0 var(--line);
+  text-align: left;
+  transition: transform 0.1s ease, background 0.15s ease;
+}
+
+.host:active {
+  transform: scale(0.97);
+  background: var(--surface-lit);
+}
+
+.host--locked {
+  opacity: 0.55;
+}
+
+.host__art {
+  width: 3.4rem;
+  height: 3.4rem;
+}
+
+.host--locked .host__art {
+  filter: grayscale(1);
+}
+
+.host__name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.15;
+}
+
+.host__sub {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  line-height: 1.25;
+}
+
+.host__stars {
+  color: var(--accent);
+  letter-spacing: 0.05em;
+  font-size: 0.7rem;
+}
+
+/* ---------- playing ---------- */
+
+.play {
+  padding: 0.4rem 0.9rem 0.7rem;
+  gap: 0.4rem;
+}
+
+.play__top {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex: none;
+}
+
+.pips {
+  display: flex;
+  gap: 0.22rem;
+  flex: 1;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.pip {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--line);
+}
+
+.pip--now {
+  background: var(--accent);
+  transform: scale(1.25);
+}
+
+.pip--right {
+  background: var(--good);
+}
+
+.pip--wrong {
+  background: var(--bad);
+}
+
+.hearts {
+  font-size: 0.8rem;
+  letter-spacing: 0.05em;
+  color: var(--bad);
+  min-width: 3.6rem;
+  text-align: right;
+}
+
+.hearts--practice {
+  color: var(--text-dim);
+  font-size: 0.7rem;
+}
+
+.stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+/* The left half only claims room when there is a picture to put in it -
+   otherwise a bare question would push the answers off the bottom. */
+.stage__left {
+  flex: 0 0 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.stage--stim .stage__left {
+  flex: 0 1 42%;
+}
+
+/* Nothing to illustrate, so the host grows into the space a picture would
+   have taken - better than a hole above the answers. */
+.stage--bare .ask {
+  grid-template-columns: 5.2rem 1fr;
+}
+
+.stage--bare .ask__host {
+  width: 5.2rem;
+  height: 5.2rem;
+}
+
+.stage__right {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.ask {
+  flex: none;
+  display: grid;
+  grid-template-columns: 3.1rem 1fr;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.ask__host {
+  width: 3.1rem;
+  height: 3.1rem;
+}
+
+.ask__prompt {
+  margin: 0;
+  font-size: clamp(0.9rem, 3.6vw, 1.05rem);
+  line-height: 1.3;
+  font-weight: 600;
+}
+
+.stim {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+}
+
+.stim .pb-art {
+  height: 100%;
+  width: auto;
+  max-width: 100%;
+}
+
+/* A row of tokens. Every cell takes the same share of the width and the svg
+   inside letterboxes itself, so four items and seven items both fill the row
+   evenly instead of one of them ballooning. */
+.row {
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  gap: 0.35rem;
+  height: 100%;
+  width: 100%;
+}
+
+.row__cell,
+.row__tail {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+}
+
+.row__tail {
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+  font-size: clamp(1.6rem, 9vw, 2.8rem);
+  font-weight: 700;
+}
+
+.sum {
+  font-size: clamp(1.4rem, 8vw, 2.4rem);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--accent-strong);
+  text-align: center;
+}
+
+/* ---------- answers ---------- */
+
+.answers {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.answers--art {
+  grid-template-columns: repeat(2, 1fr);
+  align-content: center;
+  justify-items: center;
+}
+
+.answers--text {
+  grid-template-columns: 1fr;
+  /* Rows grow to fill, but only so far: four huge slabs read as badly as four
+     tiny ones floating in the middle. */
+  grid-auto-rows: minmax(2.6rem, 5rem);
+  align-content: center;
+}
+
+.answers--text.answers--wide {
+  grid-template-columns: 1fr 1fr;
+}
+
+.opt {
+  display: grid;
+  place-items: center;
+  padding: 0.5rem;
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 1px 0 var(--line);
+  border: 2px solid transparent;
+  min-height: 0;
+  transition: transform 0.1s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.opt--art {
+  aspect-ratio: 1;
+  padding: 0.3rem;
+}
+
+.opt--text {
+  font-size: clamp(0.85rem, 3.6vw, 1rem);
+  line-height: 1.25;
+  text-align: center;
+  min-height: 2.6rem;
+}
+
+.opt:active {
+  transform: scale(0.97);
+}
+
+.opt--picked {
+  border-color: var(--accent);
+  background: #fdf1f3;
+}
+
+.opt--right {
+  border-color: var(--good);
+  background: #e7f2e9;
+  box-shadow: 0 0 0 3px rgba(111, 157, 120, 0.18);
+}
+
+.opt--wrong {
+  border-color: var(--bad);
+  background: #f9e6e0;
+  box-shadow: 0 0 0 3px rgba(196, 122, 106, 0.18);
+}
+
+.opt[disabled] {
+  opacity: 1;
+}
+
+/* ---------- letters ---------- */
+
+.letters {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.7rem;
+  min-height: 0;
+}
+
+.slots,
+.tray {
+  display: flex;
+  justify-content: center;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+
+.tile {
+  display: grid;
+  place-items: center;
+  width: clamp(2.1rem, 11vw, 2.9rem);
+  height: clamp(2.4rem, 12.5vw, 3.3rem);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 1px 0 var(--line);
+  font-size: clamp(1.1rem, 5.5vw, 1.5rem);
+  font-weight: 700;
+  color: var(--accent-strong);
+  transition: transform 0.1s ease, opacity 0.15s ease;
+}
+
+.tile:active {
+  transform: scale(0.94);
+}
+
+.tile--slot {
+  background: transparent;
+  border: 2px dashed var(--line);
+  box-shadow: none;
+  color: var(--text);
+}
+
+.tile--filled {
+  background: var(--surface);
+  border-style: solid;
+  border-color: var(--accent);
+}
+
+.tile--used {
+  opacity: 0.2;
+  pointer-events: none;
+}
+
+.tile--right {
+  border-color: var(--good);
+  color: var(--good);
+}
+
+.tile--wrong {
+  border-color: var(--bad);
+  color: var(--bad);
+}
+
+/* ---------- word grid ---------- */
+
+.grid {
+  display: grid;
+  gap: 0.3rem;
+  align-self: center;
+  justify-self: center;
+  /* Square, as wide as the room allows, and never taller than the screen has
+     left - the last term is what keeps it inside a phone held sideways. */
+  width: min(100%, 20rem);
+  width: min(100%, 20rem, 62dvh);
+}
+
+.cell {
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 1px 0 var(--line);
+  border: 2px solid transparent;
+  font-size: clamp(0.95rem, 4.5vw, 1.35rem);
+  font-weight: 700;
+  color: var(--text);
+  aspect-ratio: 1;
+  min-width: 0;
+  transition: transform 0.1s ease;
+}
+
+.cell--picked {
+  border-color: var(--accent);
+  background: #fdf1f3;
+  color: var(--accent-strong);
+}
+
+.cell--right {
+  border-color: var(--good);
+  background: #eef6ef;
+  color: var(--good);
+}
+
+.cell--wrong {
+  border-color: var(--bad);
+  background: #fbeeea;
+}
+
+.picked-word {
+  text-align: center;
+  font-size: 0.9rem;
+  letter-spacing: 0.25em;
+  color: var(--accent-strong);
+  min-height: 1.2em;
+  font-weight: 700;
+}
+
+/* ---------- feedback ---------- */
+
+.verdict {
+  flex: none;
+  margin: 0;
+  min-height: 2.3em;
+  text-align: center;
+  font-size: 0.82rem;
+  line-height: 1.3;
+  color: var(--text-dim);
+}
+
+.verdict--right {
+  color: var(--good);
+}
+
+.verdict--wrong {
+  color: var(--bad);
+}
+
+.play__bottom {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.ghost-button {
+  padding: 0.7rem 1.1rem;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: 0 1px 0 var(--line);
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.ghost-button:active {
+  background: var(--surface-lit);
+}
+
+.play__bottom .pill-button {
+  flex: 1;
+  text-align: center;
+}
+
+.pill-button[disabled] {
+  opacity: 0.4;
+}
+
+/* The countdown while a Flash row is on show. */
+.timer {
+  flex: none;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.timer__fill {
+  height: 100%;
+  width: 100%;
+  background: var(--accent);
+  transform-origin: left center;
+}
+
+/* ---------- end of a Journey ---------- */
+
+.sheet {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1.2rem;
+  background: rgba(75, 64, 56, 0.35);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+
+.sheet__panel {
+  width: min(22rem, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 1.2rem;
+  border-radius: 22px;
+  background: var(--bg);
+  text-align: center;
+  box-shadow: 0 12px 40px rgba(75, 64, 56, 0.25);
+}
+
+.sheet__art {
+  width: 5.5rem;
+  height: 5.5rem;
+  margin: 0 auto 0.3rem;
+}
+
+.sheet__title {
+  margin: 0;
+  font-size: 1.35rem;
+  color: var(--accent-strong);
+}
+
+.sheet__line {
+  margin: 0.4rem 0 0;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.sheet__unlock {
+  margin: 0.7rem 0 0;
+  padding: 0.6rem;
+  border-radius: 14px;
+  background: var(--surface);
+  font-size: 0.85rem;
+  line-height: 1.35;
+}
+
+.sheet__buttons {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 1rem;
+}
+
+.sheet__buttons .pill-button,
+.sheet__buttons .ghost-button {
+  flex: 1;
+  text-align: center;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ---------- landscape ----------
+   A phone on its side has about 330px of height once the safe areas are gone,
+   so the question moves beside the answers instead of above them. */
+/* While a Flash row is on show it is the only thing that matters, so it gets
+   the full width even on a phone held sideways. */
+.stage--study {
+  flex-direction: column;
+}
+
+.stage--study .stage__left {
+  flex: 1 1 auto;
+}
+
+.stage--study .stage__right {
+  flex: 0 0 auto;
+}
+
+@media (orientation: landscape) and (max-height: 560px) {
+  .garden {
+    padding: 0.4rem 1rem 0.6rem;
+    gap: 0.4rem;
+  }
+
+  .garden__hero h1 {
+    font-size: 1.5rem;
+  }
+
+  .garden__hero p,
+  .garden__label {
+    display: none;
+  }
+
+  .stage {
+    flex-direction: row;
+    align-items: stretch;
+    gap: 0.7rem;
+  }
+
+  .stage--bare .ask {
+    grid-template-columns: 4rem 1fr;
+  }
+
+  .stage--bare .ask__host {
+    width: 4rem;
+    height: 4rem;
+  }
+
+  .stage__left,
+  .stage--stim .stage__left {
+    flex: 1 1 42%;
+    min-width: 0;
+    justify-content: center;
+  }
+
+  .stage--study .stage__left {
+    flex: 1 1 auto;
+  }
+
+  .stage--study .stage__right {
+    flex: 0 0 auto;
+  }
+
+  .stage__right {
+    flex: 1 1 58%;
+    min-width: 0;
+  }
+
+  .ask__prompt {
+    font-size: 0.9rem;
+  }
+
+  .answers--text.answers--wide {
+    grid-template-columns: 1fr;
+  }
+
+  .verdict {
+    min-height: 0;
+    font-size: 0.75rem;
+  }
+
+  .letters {
+    gap: 0.4rem;
+  }
+}

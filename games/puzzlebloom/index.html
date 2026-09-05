@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#fbf5ea">
+  <title>Puzzlebloom</title>
+
+  <link rel="manifest" href="../../shared/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Puzzlebloom">
+  <link rel="apple-touch-icon" href="../../shared/icons/icon-180.png">
+  <link rel="icon" href="../../shared/icons/icon-192.png">
+
+  <link rel="stylesheet" href="../../shared/base.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- The watercolour filters live here once and every other svg on the page
+       points at them; feTurbulence is expensive enough on a phone that one
+       copy per sprite would be felt. Filled in by art.js on load. -->
+  <div id="defs"></div>
+
+  <div class="app">
+    <!-- ---------- the garden ---------- -->
+    <section class="screen garden" id="garden">
+      <header class="garden__top">
+        <a class="icon-button" href="../../" aria-label="Back to games">‹</a>
+        <div class="purse">
+          <span class="purse__item"><span class="purse__mark" aria-hidden="true">✿</span><span id="petals">0</span> petals</span>
+          <span class="purse__item"><span class="purse__mark" aria-hidden="true">★</span><span id="stars">0</span></span>
+        </div>
+      </header>
+
+      <div class="garden__hero">
+        <h1>Puzzlebloom</h1>
+        <p id="garden-note">Eleven friends, one puzzle each.</p>
+      </div>
+
+      <button class="pill-button go" id="start-journey" type="button">Start a Journey</button>
+
+      <p class="garden__label">or visit a friend</p>
+      <div class="hosts" id="hosts"></div>
+    </section>
+
+    <!-- ---------- a puzzle ---------- -->
+    <section class="screen play" id="play" hidden>
+      <header class="play__top">
+        <button class="icon-button" id="quit" type="button" aria-label="Back to the garden">‹</button>
+        <div class="pips" id="pips" aria-hidden="true"></div>
+        <div class="hearts" id="hearts" aria-label="Lives left"></div>
+      </header>
+
+      <!-- Two halves: what is being asked, and how you answer it. Stacked on a
+           phone held upright, side by side when it is turned. -->
+      <div class="stage" id="stage">
+        <div class="stage__left">
+          <div class="ask">
+            <div class="ask__host" id="host"></div>
+            <p class="ask__prompt" id="prompt"></p>
+          </div>
+          <div class="stim" id="stim" hidden></div>
+        </div>
+
+        <div class="stage__right">
+          <div class="answers" id="answers"></div>
+          <p class="verdict" id="verdict" role="status" aria-live="polite"></p>
+        </div>
+      </div>
+
+      <footer class="play__bottom">
+        <button class="ghost-button" id="hint" type="button">Hint</button>
+        <button class="pill-button" id="commit" type="button" disabled>Check</button>
+      </footer>
+    </section>
+  </div>
+
+  <!-- ---------- end of a Journey ---------- -->
+  <div class="sheet" id="sheet" hidden>
+    <div class="sheet__panel">
+      <div class="sheet__art" id="sheet-art"></div>
+      <h2 class="sheet__title" id="sheet-title"></h2>
+      <p class="sheet__line" id="sheet-line"></p>
+      <p class="sheet__unlock" id="sheet-unlock" hidden></p>
+      <div class="sheet__buttons">
+        <button class="ghost-button" id="sheet-garden" type="button">The garden</button>
+        <button class="pill-button" id="sheet-again" type="button">Again</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="game.js" type="module"></script>
+</body>
+</html>

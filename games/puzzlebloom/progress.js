@@ -14,22 +14,38 @@ import { KINDS } from "./puzzles.js";
 export const SAVE_KEY = "puzzlebloom:save:1";
 
 export const JOURNEY_LENGTH = 10;
-export const HEARTS = 5;
+export const HEARTS = 6;
 export const PETALS_PER_CORRECT = 2;
 export const PETALS_PERFECT_BONUS = 6;
 export const PETALS_PER_PRACTICE = 1;
 
 /* The first four puzzles are free; the rest arrive as the lifetime petal count
    passes these. Nothing is deducted when one opens. */
-export const UNLOCK_AT = [10, 24, 42, 65, 95, 130, 175];
+export const UNLOCK_AT = [8, 18, 30, 46, 66, 90, 118, 150, 186];
 export const FREE_KINDS = KINDS.length - UNLOCK_AT.length;
 
 /* Stars per puzzle, on the longest run of right answers in a row. */
 export const STAR_STREAKS = [3, 6, 10];
 
-/* Each Journey walks this ladder, so a run always opens gently and always ends
-   at the hard end whatever mix of puzzles it draws. */
-export const LEVEL_LADDER = [1, 1, 2, 2, 3, 3, 4, 4, 5, 5];
+/* A Journey does not walk a fixed ladder, it follows the player: two right in a
+   row and the puzzles get harder, a miss and they ease off. A fixed ramp is
+   either too easy for the child who is enjoying it or a wall for the one who
+   is not, and there is no setting that is right for both. Practice uses the
+   same rule, so a level means the same thing everywhere. */
+export const START_LEVEL = 2;
+export const MAX_LEVEL = 5;
+
+/* `streak` counts right answers in a row when positive and wrong ones when
+   negative. Two in a row either way moves the level, which settles a player
+   where they are getting about half of them - hard enough to be worth doing,
+   not so hard that a Journey ends on question four. Dropping a level on every
+   single miss was tried first and drifted everyone down to the easy end. */
+export function stepLevel(level, streak, right) {
+  const s = right ? Math.max(0, streak) + 1 : Math.min(0, streak) - 1;
+  if (s >= 2) return { level: Math.min(MAX_LEVEL, level + 1), streak: 0 };
+  if (s <= -2) return { level: Math.max(1, level - 1), streak: 0 };
+  return { level, streak: s };
+}
 
 export function newSave() {
   return {
@@ -44,7 +60,19 @@ export function newSave() {
 
 function kindRecord(save, id) {
   if (!save.kinds[id]) save.kinds[id] = { played: 0, right: 0, streak: 0, bestStreak: 0 };
-  return save.kinds[id];
+  const rec = save.kinds[id];
+  // Backfill, so a save written before levels were remembered still loads.
+  if (typeof rec.level !== "number") rec.level = START_LEVEL;
+  if (typeof rec.ladder !== "number") rec.ladder = 0;
+  return rec;
+}
+
+/* Where this player has settled on this puzzle. Remembered across Journeys and
+   across days: ten questions is not enough to climb from the bottom, so
+   forgetting it every run would mean a child who has mastered a puzzle keeps
+   being handed the easy version of it forever. */
+export function levelFor(save, id) {
+  return kindRecord(save, id).level;
 }
 
 /* --- unlocks -------------------------------------------------------------- */
@@ -107,9 +135,10 @@ export function awardPetals(save, n) {
   return save.petals;
 }
 
-/* The run of puzzles a Journey will ask. Kinds are dealt from a shuffled bag
-   and the bag is refilled when it empties, so a short unlock list repeats
-   evenly instead of clumping. */
+/* Which puzzles a Journey will ask, in order. Kinds are dealt from a shuffled
+   bag that refills when it empties, so a short unlock list repeats evenly
+   instead of clumping. The level is not decided here - it is whatever the
+   player has climbed to by the time each one comes round. */
 export function journeyPlan(save, next) {
   const pool = unlockedKinds(save).map((k) => k.id);
   const rounds = [];
@@ -122,11 +151,11 @@ export function journeyPlan(save, next) {
         [bag[j], bag[s]] = [bag[s], bag[j]];
       }
       // Never open a fresh bag with the puzzle that closed the last one.
-      if (rounds.length && bag.length > 1 && bag[0] === rounds[rounds.length - 1].kind) {
+      if (rounds.length && bag.length > 1 && bag[0] === rounds[rounds.length - 1]) {
         [bag[0], bag[1]] = [bag[1], bag[0]];
       }
     }
-    rounds.push({ kind: bag.shift(), level: LEVEL_LADDER[i] });
+    rounds.push(bag.shift());
   }
   return rounds;
 }
@@ -135,7 +164,10 @@ export function journeyPlan(save, next) {
    run, so walking out of a Journey half way - or running out of hearts on
    question nine - keeps everything already won. */
 export function bankAnswer(save, id, right, mode = "journey") {
-  recordAnswer(save, id, right);
+  const rec = recordAnswer(save, id, right);
+  const stepped = stepLevel(rec.level, rec.ladder, right);
+  rec.level = stepped.level;
+  rec.ladder = stepped.streak;
   if (!right) return 0;
   const petals = mode === "journey" ? PETALS_PER_CORRECT : PETALS_PER_PRACTICE;
   awardPetals(save, petals);

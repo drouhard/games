@@ -320,6 +320,8 @@ export const MASCOTS = {
   tock: { name: "Tock", color: "sage", ears: "none", acc: "crown", eyes: "dot", tuft: 0 },
   mote: { name: "Mote", color: "sky", ears: "round", acc: "star", eyes: "sleepy", tuft: 1 },
   fig: { name: "Fig", color: "bark", ears: "long", acc: "scarf", eyes: "sparkle", tuft: 1 },
+  juno: { name: "Juno", color: "slate", ears: "pointy", acc: "specs", eyes: "wide", tuft: 3 },
+  sable: { name: "Sable", color: "coral", ears: "tuft", acc: "crown", eyes: "sleepy", tuft: 0 },
 };
 
 export const MASCOT_KEYS = Object.keys(MASCOTS);
@@ -443,70 +445,29 @@ export function hashString(s) {
 
 /* --- composed pictures --------------------------------------------------- */
 
-/* A scatter of tokens on one sheet, for the counting puzzle. Positions come in
-   from the generator so the puzzle - not the painter - decides what is there. */
-export function scene(items, { width = 320, height = 200 } = {}) {
+/* The grid of cells that Juno's counting puzzle is asked about. Each present
+   cell is painted separately, so the seams between them stay visible - which
+   is the whole point, since the puzzle is about the squares those seams make
+   and not about the blob they add up to. */
+export function figure(cells, cols, rows, { color = "sage", unit = 46 } = {}) {
+  const pad = 8;
+  const width = cols * unit + pad * 2;
+  const height = rows * unit + pad * 2;
   let inner = "";
-  for (const it of items) {
-    const shape = GLYPHS[it.glyph];
-    if (!shape) throw new Error(`unknown glyph: ${it.glyph}`);
-    const next = rng((it.seed || 1) * 2654435761);
-    const jitter = shape.pts.map(([x, y]) => [x + (next() - 0.5) * 2.4, y + (next() - 0.5) * 2.4]);
-    const d = smoothPath(jitter, true, it.glyph === "star" ? 0.55 : 1);
-    const s = (it.scale || 1) * 0.42;
-    inner += `<g transform="translate(${round2(it.x)} ${round2(it.y)}) rotate(${round2(it.rotate || 0)}) scale(${round2(s)})" style="mix-blend-mode:multiply">${wash(d, it.color)}</g>`;
-  }
-  return `<svg class="pb-art pb-scene" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">${inner}</svg>`;
-}
-
-/* The balance for Plum's weighing puzzle. Every beam is drawn level, because
-   a level beam is the fact the puzzle hands you: these two piles weigh the
-   same. Several facts are laid out along one sheet so the picture stays one
-   element however many scales a level puts up. */
-export function scales(facts, { width = 240, height = 156 } = {}) {
-  let inner = "";
-  facts.forEach((fact, i) => {
-    inner += `<g transform="translate(${i * width} 0)" style="mix-blend-mode:multiply">${oneScale(fact)}</g>`;
+  cells.forEach((present, i) => {
+    if (!present) return;
+    const cx = pad + (i % cols) * unit + unit / 2;
+    const cy = pad + Math.floor(i / cols) * unit + unit / 2;
+    const next = rng((i + 7) * 2654435761);
+    const half = unit / 2 - 1.5;
+    const pts = [
+      [cx - half, cy - half], [cx, cy - half - 1], [cx + half, cy - half],
+      [cx + half + 1, cy], [cx + half, cy + half], [cx, cy + half + 1],
+      [cx - half, cy + half], [cx - half - 1, cy],
+    ].map(([x, y]) => [x + (next() - 0.5) * 1.6, y + (next() - 0.5) * 1.6]);
+    inner += `<g style="mix-blend-mode:multiply">${wash(smoothPath(pts, true, 0.35), color, { bleed: 3 })}</g>`;
   });
-  return `<svg class="pb-art pb-scales" viewBox="0 0 ${width * facts.length} ${height}" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">${inner}</svg>`;
-}
-
-function oneScale(fact) {
-  const cx = 120;
-  const beamY = 40;
-  const arm = 64;
-  const panY = 96;
-  let s = "";
-  // Stand first, so the beam washes over the top of the post rather than the
-  // post crossing the beam like a sword.
-  s += wash(smoothPath([[cx - 28, 128], [cx + 28, 128], [cx + 22, 140], [cx - 22, 140]], true), "bark", { opacity: 0.75, bleed: 4 });
-  s += wash(smoothPath([[cx - 5, beamY], [cx + 5, beamY], [cx + 8, 130], [cx - 8, 130]], true), "bark", { opacity: 0.7, bleed: 4 });
-  s += wash(smoothPath([[cx - arm - 12, beamY - 5], [cx + arm + 12, beamY - 5], [cx + arm + 12, beamY + 5], [cx - arm - 12, beamY + 5]], true), "bark", { opacity: 0.9, bleed: 4 });
-  for (const side of [-1, 1]) {
-    const x = cx + side * arm;
-    // Painted as a thin sliver rather than a stroked line: a filter on a
-    // zero-width bounding box has a zero-area region, and the cord vanishes.
-    s += wash(smoothPath([[x - 1.6, beamY + 2], [x + 1.6, beamY + 2], [x + 2.4, panY - 2], [x - 2.4, panY - 2]], true), "bark", { opacity: 0.6, bleed: 2 });
-    s += pan(side < 0 ? fact.left : fact.right, x, panY);
-  }
-  return s;
-}
-
-/* A shallow bowl with its load sitting on the rim, not floating over it. */
-function pan(items, cx, cy) {
-  let s = wash(smoothPath([[cx - 34, cy], [cx, cy + 4], [cx + 34, cy], [cx + 26, cy + 13], [cx, cy + 17], [cx - 26, cy + 13]], true), "bark", { opacity: 0.8, bleed: 4 });
-  const n = items.length;
-  const step = Math.min(22, 62 / Math.max(1, n));
-  items.forEach((it, i) => {
-    const shape = GLYPHS[it.glyph];
-    if (!shape) throw new Error(`unknown glyph: ${it.glyph}`);
-    const next = rng((it.seed || i + 1) * 2654435761);
-    const jitter = shape.pts.map(([px, py]) => [px + (next() - 0.5) * 2, py + (next() - 0.5) * 2]);
-    const d = smoothPath(jitter, true, it.glyph === "star" ? 0.55 : 1);
-    const x = cx - (step * (n - 1)) / 2 + step * i;
-    s += `<g transform="translate(${round2(x)} ${cy - 12}) scale(0.3)">${wash(d, it.color)}</g>`;
-  });
-  return s;
+  return `<svg class="pb-art pb-figure" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">${inner}</svg>`;
 }
 
 export { esc };

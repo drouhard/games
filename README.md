@@ -23,6 +23,7 @@ tools/balance-sim.mjs   balance simulator for Emberdeep
 tools/climb-sim.mjs     balance simulator for Stickclimb
 tools/hell-sim.mjs      balance simulator for Petalstorm
 tools/brine-sim.mjs     balance simulator for Brinewright
+tools/bloom-sim.mjs     puzzle checker and simulator for Puzzlebloom
 tools/check-sprites.mjs sprite validator, for every game that has sprites
 ```
 
@@ -41,6 +42,52 @@ not at the domain root, so a leading `/` in an `href` or `src` would 404.
 4. Merge to `main` — that publishes it.
 
 ## Games
+
+### Puzzlebloom
+
+Eleven brain teasers for a nine-year-old, hosted by eleven chibi animals
+painted in watercolour. Nothing in it looks or plays like anything else in this
+repo: no combat, no numbers going up, no pixels.
+
+The puzzles are **generated, not listed**, so they do not run out: unscramble a
+word, answer a riddle, spot the shape that does not belong, spot the word that
+does not belong, tell a mirrored shape from a turned one, finish a pattern,
+weigh fruit against fruit on a balance, remember a row of creatures and say
+which one was never there, find a word hidden in a grid of letters, find the
+missing sign in a sum, and count what is scattered across a meadow. Each has
+five difficulty levels and its own host.
+
+**Journey** is ten puzzles with a rising difficulty ladder and five hearts;
+**Practice** is one host, endlessly, finding its own level — two right in a row
+moves up, a miss moves down. Petals are banked the instant they are earned, so
+running out of hearts on question nine, or simply walking out, keeps
+everything already won. Petals are a lifetime count and hosts unlock at
+thresholds on it: nothing is ever spent and a bad run can never take anything
+away. Stars come from the longest run of right answers on each puzzle.
+
+Every tap is free and reversible — picking an answer highlights it, tapping a
+letter puts it in a slot and tapping it again takes it back — and nothing is
+ever scored until the Check button at the bottom.
+
+The art is watercolour, not pixels: no image files, no sprite grids. Every
+creature and token is built in `art.js` out of wobbled point loops painted in
+three stacked washes — a pale bleed, the body of the colour, and the rim where
+pigment pools at a wet edge — multiplying onto a paper ground. The wobble comes
+from a seeded RNG so a token looks the same each time it is drawn.
+
+`tools/bloom-sim.mjs` is the reason it can be trusted. Generated puzzles fail
+one in four hundred at a time, which is invisible from playing, so everything
+is generated in bulk and graded by code that does not share the generator's
+opinion: the sums are re-evaluated, the meadow is re-counted from the picture
+against the words of the question, the hidden word is re-searched in its grid,
+the pattern is re-solved by a solver that never saw the rules, and every
+shape's mirror image is measured against all 360 rotations of it to prove the
+Mirror puzzle is asking about a difference that really exists. Over 11,000
+puzzles it reports no faults, the right answer lands in each of the four slots
+25% of the time, and every difficulty proxy climbs from level 1 to level 5.
+Careers say a middling player opens all eleven hosts in 11-13 Journeys and
+reaches the end of a run 93% of the time; a struggling one still opens all
+eleven, in 14-17.
 
 ### Wildermark
 

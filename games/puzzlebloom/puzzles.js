@@ -1,16 +1,22 @@
-/* The eleven puzzles, as pure generators.
+/* The thirteen puzzles, as pure generators.
 
    Nothing here knows what a screen is. A generator takes a seeded random
-   function and a level from 1 to 5, and hands back a plain object describing
-   the question, the picture, the answers and which one is right. game.js turns
-   that into elements; tools/bloom-sim.mjs generates tens of thousands of them
-   and checks the things that are invisible from playing a few:
+   function and a level from 1 to 5 and hands back a plain object describing
+   the question, the picture, the answers and which one is right.
 
-     - exactly one option is correct, and no two options are the same
-     - the right answer lands in every slot about equally often
-     - the arithmetic ones have no second operator that also hits the target
-     - a hidden word appears in its grid exactly once
-     - the difficulty ladder actually gets harder
+   The rule every puzzle in here has to pass is that it cannot be answered by
+   noticing something. Spotting the odd colour, counting the ducks, telling
+   which token was in the row - those are recognition, and a nine-year-old
+   beats them without thinking. Everything below needs at least two steps of
+   reasoning held in your head at once, and most of them cannot be guessed at
+   all, because the answer is a number you type rather than one of four cards.
+
+   The other rule is that the answer has to be provably the only one. Nearly
+   every generator here builds a situation and then *solves it back* by brute
+   force, throwing the puzzle away unless exactly one answer survives - the
+   sequence with two defensible continuations, the logic grid that two
+   arrangements satisfy, the pyramid that does not pin its missing brick. Those
+   are invisible from playing and poisonous when they happen.
 
    The shared shape every generator returns:
 
@@ -18,15 +24,14 @@
      host      the mascot who asks it
      prompt    the question, in words
      hint      a nudge that costs nothing
-     stimulus  the picture above the answers, or null
-     study     { seconds, stimulus } shown first and then taken away
-     form      "choice" | "letters" | "grid"
+     stimulus  the picture or working above the answers, or null
+     form      "choice" | "keypad" | "letters"
      options   [{ text }] or [{ token }] - for "choice"
-     answer    index into options, or the string/path the player must build
-     explain   the line shown once the answer is in */
+     answer    index into options, or the string the player must build
+     explain   the working, shown once the answer is in */
 
-import { COLOR_KEYS, COLOR_NAMES, NAMED_COLORS, CHIRAL_KEYS, PLAIN_KEYS, SOLID_KEYS, describe } from "./art.js";
-import { WORDS, RIDDLES, CATEGORIES } from "./words.js";
+import { COLOR_KEYS, CHIRAL_KEYS, PLAIN_KEYS, describe } from "./art.js";
+import { RIDDLES, ANALOGIES, LADDER_WORDS, NAMES, LOGIC_SETS } from "./words.js";
 
 /* --- small helpers ------------------------------------------------------- */
 
@@ -43,83 +48,345 @@ export function shuffle(list, next) {
   return out;
 }
 
-/* n distinct members of `list`. */
 export function sample(list, n, next) {
   return shuffle(list, next).slice(0, n);
 }
 
 const clampLevel = (level) => Math.max(1, Math.min(5, Math.round(level)));
 
-/* Options arrive in a fixed order with the right one first; this drops them
-   into a random order and reports where the right one ended up. Every choice
-   puzzle goes through it, which is why the answer is never "usually B". */
+/* A generator that runs out of attempts has constraints it cannot satisfy,
+   which is a bug in the constraints and not something to paper over with an
+   easier puzzle. tools/bloom-sim.mjs builds tens of thousands of every kind at
+   every level, so if this can fire it fires there and not on a phone. */
+function giveUp(kind, level) {
+  throw new Error(`${kind}: ran out of attempts building a level ${level} puzzle`);
+}
+const int = (next, lo, hi) => lo + Math.floor(next() * (hi - lo + 1));
+
+/* Options arrive with the right one first; this drops them into a random order
+   and reports where it landed, so the answer is never "usually B". */
 function place(options, next) {
   const tagged = options.map((o, i) => ({ o, correct: i === 0 }));
   const mixed = shuffle(tagged, next);
   return { options: mixed.map((t) => t.o), answer: mixed.findIndex((t) => t.correct) };
 }
 
-/* Distractor numbers around a true answer: near misses, never negative, never
-   a repeat, and never the answer itself. */
-function numberOptions(answer, next, spread = [1, 2, 3, 4, 5], least = 1) {
-  const seen = new Set([answer]);
-  const out = [];
-  let guard = 0;
-  while (out.length < 3 && guard++ < 60) {
-    const step = pick(spread, next) * (next() < 0.5 ? -1 : 1);
-    const v = answer + step;
-    if (v < least || seen.has(v)) continue;
-    seen.add(v);
-    out.push(v);
-  }
-  // If the answer sits too near the bottom to have three lower neighbours, climb.
-  let up = Math.max(answer, least) + 1;
-  while (out.length < 3) {
-    if (!seen.has(up)) {
-      seen.add(up);
-      out.push(up);
-    }
-    up += 1;
-  }
-  return out;
+/* A typed number, not one of four cards. Two thirds of the puzzles here answer
+   this way, which is the single biggest thing that makes them hard: there is
+   nothing to guess between. */
+function typed(value) {
+  return { form: "keypad", answer: String(value), options: null };
 }
 
-const wordsOfLength = (lens) => WORDS.filter((w) => lens.includes(w.w.length));
+/* --- 1. Next Number (Vine) ----------------------------------------------- */
 
-/* --- 1. Scramble (Bramble) ----------------------------------------------- */
+/* Each fitter looks at the terms on show and says what it thinks comes next,
+   or null if it cannot explain them. A puzzle is only allowed out if every
+   fitter that *can* explain the row agrees on the answer - which is what stops
+   "2 4 8 16" being marked wrong for a child who read it as doubling when the
+   generator meant something else. It is honest about its own limits: these
+   eight rules are what this game means by a pattern. */
+const FITTERS = {
+  add(t) {
+    const d = t[1] - t[0];
+    for (let i = 1; i < t.length; i++) if (t[i] - t[i - 1] !== d) return null;
+    return t[t.length - 1] + d;
+  },
+  multiply(t) {
+    if (t[0] === 0) return null;
+    const r = t[1] / t[0];
+    if (!Number.isInteger(r) || Math.abs(r) < 2) return null;
+    for (let i = 1; i < t.length; i++) if (t[i] !== t[i - 1] * r) return null;
+    return t[t.length - 1] * r;
+  },
+  alternate(t) {
+    if (t.length < 4) return null;
+    const p = t[1] - t[0];
+    const q = t[2] - t[1];
+    if (p === q) return null;
+    for (let i = 1; i < t.length; i++) if (t[i] - t[i - 1] !== (i % 2 ? p : q)) return null;
+    return t[t.length - 1] + (t.length % 2 ? p : q);
+  },
+  fibonacci(t) {
+    if (t.length < 4) return null;
+    for (let i = 2; i < t.length; i++) if (t[i] !== t[i - 1] + t[i - 2]) return null;
+    return t[t.length - 1] + t[t.length - 2];
+  },
+  growingGap(t) {
+    if (t.length < 4) return null;
+    const d = t.slice(1).map((v, i) => v - t[i]);
+    const dd = d[1] - d[0];
+    if (dd === 0) return null;
+    for (let i = 1; i < d.length; i++) if (d[i] - d[i - 1] !== dd) return null;
+    return t[t.length - 1] + d[d.length - 1] + dd;
+  },
+  timesThenPlus(t) {
+    for (let m = 2; m <= 5; m++) {
+      for (let a = -12; a <= 12; a++) {
+        let ok = true;
+        for (let i = 1; i < t.length; i++) {
+          if (t[i] !== t[i - 1] * m + a) {
+            ok = false;
+            break;
+          }
+        }
+        if (ok) return t[t.length - 1] * m + a;
+      }
+    }
+    return null;
+  },
+  twoRows(t) {
+    if (t.length < 5) return null;
+    const even = t.filter((_, i) => i % 2 === 0);
+    const odd = t.filter((_, i) => i % 2 === 1);
+    if (even.length < 2 || odd.length < 2) return null;
+    const de = even[1] - even[0];
+    for (let i = 1; i < even.length; i++) if (even[i] - even[i - 1] !== de) return null;
+    const dd = odd[1] - odd[0];
+    for (let i = 1; i < odd.length; i++) if (odd[i] - odd[i - 1] !== dd) return null;
+    return t.length % 2 === 0 ? even[even.length - 1] + de : odd[odd.length - 1] + dd;
+  },
+};
 
-const SCRAMBLE_LENGTHS = { 1: [4], 2: [4, 5], 3: [5], 4: [5, 6], 5: [6, 7] };
+/* Every reading of the row, so the generator can refuse an ambiguous one. */
+export function readSequence(terms) {
+  const seen = new Map();
+  for (const [name, fit] of Object.entries(FITTERS)) {
+    const v = fit(terms);
+    if (v !== null && Number.isFinite(v)) seen.set(name, v);
+  }
+  return seen;
+}
 
-export function scramble(next, level = 1) {
+const SEQ_SHAPES = {
+  1: ["add"],
+  2: ["add", "multiply"],
+  3: ["alternate", "timesThenPlus"],
+  4: ["fibonacci", "growingGap"],
+  5: ["twoRows", "timesThenPlus", "growingGap"],
+};
+
+export function sequence(next, level = 1) {
   const lv = clampLevel(level);
-  const entry = pick(wordsOfLength(SCRAMBLE_LENGTHS[lv]), next);
-  const letters = entry.w.split("");
-  let mixed = shuffle(letters, next);
-  // A "scramble" that hands back the word is not a puzzle. Retry, then fall
-  // back to a rotation, which for a word of 4+ letters is never the word.
-  for (let i = 0; i < 8 && mixed.join("") === entry.w; i++) mixed = shuffle(letters, next);
-  if (mixed.join("") === entry.w) mixed = letters.slice(1).concat(letters[0]);
+  for (let attempt = 0; attempt < 300; attempt++) {
+    const shape = pick(SEQ_SHAPES[lv], next);
+    const show = shape === "twoRows" ? 6 : 5;
+    const terms = [];
+    if (shape === "add") {
+      const d = lv === 1 ? int(next, 2, 7) : int(next, 3, 11) * (next() < 0.35 ? -1 : 1);
+      let v = int(next, 1, lv === 1 ? 9 : 40);
+      for (let i = 0; i <= show; i++, v += d) terms.push(v);
+    } else if (shape === "multiply") {
+      const r = pick([2, 3], next);
+      let v = int(next, 1, 4);
+      for (let i = 0; i <= show; i++, v *= r) terms.push(v);
+    } else if (shape === "alternate") {
+      const p = int(next, 2, 9);
+      let q = int(next, 2, 9);
+      if (q === p) q = p + 3;
+      let v = int(next, 1, 12);
+      for (let i = 0; i <= show; i++) {
+        terms.push(v);
+        v += i % 2 === 0 ? p : q;
+      }
+    } else if (shape === "fibonacci") {
+      let a = int(next, 1, 6);
+      let b = int(next, 2, 9);
+      terms.push(a, b);
+      while (terms.length <= show) {
+        const c = terms[terms.length - 1] + terms[terms.length - 2];
+        terms.push(c);
+      }
+    } else if (shape === "growingGap") {
+      const dd = int(next, 1, lv >= 5 ? 5 : 3);
+      let d = int(next, 1, 5);
+      let v = int(next, 1, 8);
+      for (let i = 0; i <= show; i++) {
+        terms.push(v);
+        v += d;
+        d += dd;
+      }
+    } else if (shape === "timesThenPlus") {
+      const m = lv >= 5 ? pick([2, 3, 4], next) : 2;
+      const a = int(next, 1, 6) * (next() < 0.3 ? -1 : 1);
+      let v = int(next, 1, 6);
+      for (let i = 0; i <= show; i++) {
+        terms.push(v);
+        v = v * m + a;
+      }
+    } else {
+      const de = int(next, 2, 8);
+      const dd = -int(next, 2, 8);
+      let e = int(next, 1, 10);
+      let o = int(next, 30, 60);
+      for (let i = 0; i <= show; i++) {
+        terms.push(i % 2 === 0 ? e : o);
+        if (i % 2 === 0) e += de;
+        else o += dd;
+      }
+    }
+
+    const shown = terms.slice(0, show);
+    const wanted = terms[show];
+    if (shown.some((v) => v < 0 || v > 999) || wanted < 0 || wanted > 999) continue;
+    if (new Set(shown).size < shown.length - 1) continue; // a row of repeats is no pattern
+    const readings = readSequence(shown);
+    if (readings.size === 0) continue;
+    const answers = new Set(readings.values());
+    if (answers.size !== 1 || !answers.has(wanted)) continue;
+
+    const names = {
+      add: "it goes up by the same amount each time",
+      multiply: "each one is a multiple of the one before",
+      alternate: "the gap swaps between two sizes",
+      fibonacci: "each one is the two before it added together",
+      growingGap: "the gap itself grows by the same amount each time",
+      timesThenPlus: "each one is the one before, times something, plus something",
+      twoRows: "there are two patterns taking it in turns",
+    };
+    return {
+      kind: "sequence",
+      host: "vine",
+      level: lv,
+      prompt: "What is the next number?",
+      hint: "Write the gaps between them underneath. If the gaps do not settle, look at every other one.",
+      stimulus: { type: "terms", items: shown.map(String), tail: "?" },
+      rule: [...readings.keys()][0],
+      ...typed(wanted),
+      explain: `${wanted} — ${names[[...readings.keys()][0]]}.`,
+    };
+  }
+  return giveUp("sequence", lv);
+}
+
+/* --- 2. Like For Like (Pip) ---------------------------------------------- */
+
+/* Level decides which word is missing. Hiding the last one is the ordinary
+   analogy; hiding one from the example pair means working the relation out
+   backwards, from one complete half and one loose end. */
+export function analogy(next, level = 1) {
+  const lv = clampLevel(level);
+  const entry = pick(ANALOGIES, next);
+  const others = ANALOGIES.filter((e) => e !== entry);
+  let prompt;
+  let correct;
+  let decoys;
+  // Which word of the four is the one left out - the last, the middle of the
+  // example, or the first half of the second pair.
+  const missing = lv <= 2 ? "answer" : lv <= 4 ? "example" : "subject";
+
+  if (lv <= 2) {
+    prompt = `${entry.pair[0]} is to ${entry.pair[1]} as ${entry.q} is to …?`;
+    correct = entry.a;
+    decoys = entry.o.slice(0, 3);
+  } else if (lv <= 4) {
+    prompt = `${entry.pair[0]} is to …? as ${entry.q} is to ${entry.a}`;
+    correct = entry.pair[1];
+    // Deduped: "hand" is the second half of two different pairs, and offering
+    // it twice makes one of the four cards a nonsense choice.
+    decoys = sample(
+      [...new Set(others.map((e) => e.pair[1]))].filter((w) => w !== correct && !entry.o.includes(w)),
+      3,
+      next
+    );
+  } else {
+    prompt = `${entry.pair[0]} is to ${entry.pair[1]} as …? is to ${entry.a}`;
+    correct = entry.q;
+    decoys = sample(
+      [...new Set(others.map((e) => e.q))].filter((w) => w !== correct && w !== entry.pair[0]),
+      3,
+      next
+    );
+  }
+  if (decoys.length < 3) return giveUp("analogy", lv);
+
+  const { options, answer } = place([{ text: correct }, ...decoys.map((text) => ({ text }))], next);
   return {
-    kind: "scramble",
-    host: "bramble",
+    kind: "analogy",
+    host: "pip",
     level: lv,
-    prompt: "Put the letters back in order.",
-    hint: entry.hint,
+    prompt,
+    missing,
+    hint: "Say the first pair as a sentence, then say the same sentence about the second.",
     stimulus: null,
-    study: null,
-    form: "letters",
-    letters: mixed,
-    options: null,
-    answer: entry.w,
-    explain: `${entry.w} — ${entry.hint.toLowerCase()}.`,
+    form: "choice",
+    options,
+    answer,
+    explain: `${correct} — the link is ${entry.why}.`,
   };
 }
 
-/* --- 2. Riddle (Wick) ----------------------------------------------------- */
+/* --- 3. Fruit Sums (Plum) ------------------------------------------------ */
 
-/* The list is roughly ordered plain-to-twisty, so the level picks a window
-   into it rather than needing a difficulty number on every riddle. */
-const RIDDLE_WINDOW = { 1: [0, 30], 2: [0, 38], 3: [16, 50], 4: [30, 58], 5: [38, 62] };
+const evalRow = (row, vals) =>
+  row.op === "×" ? row.terms.reduce((p, i) => p * vals[i], 1) : row.terms.reduce((s, i) => s + vals[i], 0);
+
+/* Solve the equations back from scratch, ignoring the values they were built
+   from. Two solutions means two right answers. */
+export function solveSymbols(rows, count, max = 15) {
+  const solutions = [];
+  const vals = new Array(count);
+  const walk = (i) => {
+    if (solutions.length > 1) return;
+    if (i === count) {
+      if (rows.every((r) => evalRow(r, vals) === r.value)) solutions.push(vals.slice());
+      return;
+    }
+    for (let v = 1; v <= max; v++) {
+      vals[i] = v;
+      walk(i + 1);
+    }
+  };
+  walk(0);
+  return solutions;
+}
+
+/* Which equations each level puts up, and what it then asks for. `t` is which
+   symbols are in the row. */
+const SUM_SHAPES = {
+  1: { count: 2, rows: [{ t: [0, 0] }, { t: [0, 1] }], ask: { t: [1, 1] } },
+  2: { count: 2, rows: [{ t: [0, 0, 0] }, { t: [0, 1] }], ask: { t: [0, 1, 1] } },
+  3: { count: 3, rows: [{ t: [0, 0] }, { t: [0, 1] }, { t: [1, 2] }], ask: { t: [2] } },
+  4: { count: 3, rows: [{ t: [0, 0] }, { t: [0, 1], op: "×" }, { t: [1, 2] }], ask: { t: [2, 2] } },
+  // The classic three-sums puzzle: no symbol is ever alone, so none of it can
+  // be read straight off - all three have to move at once.
+  5: { count: 3, rows: [{ t: [0, 1] }, { t: [1, 2] }, { t: [0, 2] }], ask: { t: [0] } },
+};
+
+export function equations(next, level = 1) {
+  const lv = clampLevel(level);
+  const shape = SUM_SHAPES[lv];
+  for (let attempt = 0; attempt < 600; attempt++) {
+    const vals = Array.from({ length: shape.count }, () => int(next, 1, lv >= 4 ? 9 : 12));
+    const rows = shape.rows.map((r) => ({ terms: r.t, op: r.op || "+", value: 0 }));
+    for (const r of rows) r.value = evalRow(r, vals);
+    if (rows.some((r) => r.value > 99)) continue;
+    if (solveSymbols(rows, shape.count).length !== 1) continue;
+
+    const ask = { terms: shape.ask.t, op: shape.ask.op || "+" };
+    const wanted = evalRow(ask, vals);
+    if (wanted < 1 || wanted > 99) continue;
+
+    const glyphs = sample(PLAIN_KEYS, shape.count, next);
+    const colors = sample(COLOR_KEYS, shape.count, next);
+    const symbols = glyphs.map((glyph, i) => ({ glyph, color: colors[i], seed: 30 + i }));
+    return {
+      kind: "equations",
+      host: "plum",
+      level: lv,
+      prompt: "What does the last row come to?",
+      hint: "Find a row with only one kind of thing in it, and start there.",
+      stimulus: { type: "equations", symbols, rows, ask },
+      ...typed(wanted),
+      explain: `${wanted} — ${symbols.map((s, i) => `the ${describe(s)} is ${vals[i]}`).join(", ")}.`,
+    };
+  }
+  return giveUp("equations", lv);
+}
+
+/* --- 4. Riddles (Nox) ---------------------------------------------------- */
+
+const RIDDLE_WINDOW = { 1: [0, 16], 2: [8, 28], 3: [18, 40], 4: [30, 52], 5: [40, 60] };
 
 export function riddle(next, level = 1) {
   const lv = clampLevel(level);
@@ -130,12 +397,11 @@ export function riddle(next, level = 1) {
   const { options, answer } = place([{ text: correct }, ...rest.map((text) => ({ text }))], next);
   return {
     kind: "riddle",
-    host: "wick",
+    host: "nox",
     level: lv,
     prompt: r.q,
-    hint: "Read it again slowly. The trick is usually one word.",
+    hint: "The obvious answer is usually the wrong one. Read it again for the word that is doing the trick.",
     stimulus: null,
-    study: null,
     form: "choice",
     options,
     answer,
@@ -143,88 +409,397 @@ export function riddle(next, level = 1) {
   };
 }
 
-/* --- 3. Odd shape out (Pip) ---------------------------------------------- */
+/* --- 5. Number Pyramid (Tock) -------------------------------------------- */
 
-/* Hues that sit next to each other are the level-4 job: telling sage from
-   teal is a different task from telling green from red. */
-const NEIGHBOUR_HUES = {
-  rose: ["plum", "coral"], coral: ["rose", "amber"], amber: ["coral", "lime"],
-  lime: ["amber", "sage"], sage: ["lime", "teal"], teal: ["sage", "sky"],
-  sky: ["teal", "indigo"], indigo: ["sky", "violet"], violet: ["indigo", "plum"],
-  plum: ["violet", "rose"], bark: ["amber", "slate"], slate: ["bark", "sky"],
+/* Bottom row up: every brick is the two under it added together. */
+export function buildPyramid(bottom) {
+  const levels = [bottom.slice()];
+  let cur = bottom;
+  while (cur.length > 1) {
+    const up = [];
+    for (let i = 0; i + 1 < cur.length; i++) up.push(cur[i] + cur[i + 1]);
+    levels.unshift(up);
+    cur = up;
+  }
+  return levels; // levels[0] is the single brick at the top
+}
+
+/* Every bottom row consistent with the bricks on show. More than one and the
+   puzzle does not actually pin its missing brick down. */
+export function solvePyramid(shown, width, max = 14) {
+  const found = [];
+  const bottom = new Array(width);
+  const walk = (i) => {
+    if (found.length > 1) return;
+    if (i === width) {
+      const levels = buildPyramid(bottom);
+      const fits = shown.every(([r, c, v]) => levels[r][c] === v);
+      if (fits) found.push(levels);
+      return;
+    }
+    for (let v = 1; v <= max; v++) {
+      bottom[i] = v;
+      walk(i + 1);
+    }
+  };
+  walk(0);
+  return found;
+}
+
+const PYRAMID_WIDTH = { 1: 3, 2: 3, 3: 4, 4: 4, 5: 4 };
+
+export function pyramid(next, level = 1) {
+  const lv = clampLevel(level);
+  const width = PYRAMID_WIDTH[lv];
+  for (let attempt = 0; attempt < 400; attempt++) {
+    const bottom = Array.from({ length: width }, () => int(next, 1, lv >= 3 ? 9 : 12));
+    const levels = buildPyramid(bottom);
+    if (levels[0][0] > 99) continue;
+
+    const all = [];
+    levels.forEach((row, r) => row.forEach((_, c) => all.push([r, c])));
+    const bottomRow = levels.length - 1;
+    const askAt = pick(all.filter(([r]) => r === bottomRow), next);
+
+    // Show the top brick and then keep adding bricks - never the asked one -
+    // until the rest of the pyramid is forced. That way the reveal is as thin
+    // as it can be while the answer is still the only one.
+    const shown = [[0, 0, levels[0][0]]];
+    // At the top level no bottom brick is ever given away, so the whole row
+    // has to be worked back down from above.
+    const spare = shuffle(
+      all.filter(
+        ([r, c]) =>
+          !(r === 0 && c === 0) && !(r === askAt[0] && c === askAt[1]) && !(lv >= 5 && r === bottomRow)
+      ),
+      next
+    );
+    // Level decides where the clues tend to sit. Bottom bricks read straight
+    // up; bricks higher in the stack have to be worked back down, which needs
+    // the subtraction as well as the addition.
+    const preferred =
+      lv === 1
+        ? spare.slice().sort((a, b) => b[0] - a[0])
+        : lv >= 4
+          ? spare.slice().sort((a, b) => a[0] - b[0])
+          : spare;
+    for (const [r, c] of preferred) {
+      if (solvePyramid(shown, width).length === 1) break;
+      shown.push([r, c, levels[r][c]]);
+    }
+    if (solvePyramid(shown, width).length !== 1) continue;
+
+    // Drop any brick the answer does not actually need.
+    for (let i = shown.length - 1; i > 0; i--) {
+      const without = shown.filter((_, k) => k !== i);
+      if (solvePyramid(without, width).length === 1) shown.splice(i, 1);
+    }
+
+    const cells = levels.map((row, r) =>
+      row.map((v, c) => ({
+        value: shown.some(([sr, sc]) => sr === r && sc === c) ? v : null,
+        ask: r === askAt[0] && c === askAt[1],
+      }))
+    );
+    const wanted = levels[askAt[0]][askAt[1]];
+    return {
+      kind: "pyramid",
+      host: "tock",
+      level: lv,
+      prompt: "Every brick is the two under it added together. What goes in the gap?",
+      hint: "You can work downwards as well as up: a brick minus one of the two under it gives the other.",
+      stimulus: { type: "pyramid", cells },
+      ...typed(wanted),
+      explain: `${wanted} — the bottom row is ${bottom.join(", ")}.`,
+    };
+  }
+  return giveUp("pyramid", lv);
+}
+
+/* --- 6. Word Ladder (Bramble) -------------------------------------------- */
+
+const UNIQUE_LADDER_WORDS = [...new Set(LADDER_WORDS)];
+
+const oneApart = (a, b) => {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i] && ++diff > 1) return false;
+  return diff === 1;
 };
 
-export function oddShape(next, level = 1) {
-  const lv = clampLevel(level);
-  // Level 5 counts spots, so it needs a shape with a middle to put them in.
-  const pool = lv >= 5 ? SOLID_KEYS : PLAIN_KEYS;
-  const glyph = pick(pool, next);
-  const color = pick(COLOR_KEYS, next);
-  const seedBase = Math.floor(next() * 100000);
-  const same = (i) => ({ glyph, color, rotate: 0, seed: seedBase + i, decor: lv >= 5 ? 2 : 0 });
-
-  let odd;
-  let why;
-  if (lv === 1) {
-    odd = { ...same(9), glyph: pick(pool.filter((g) => g !== glyph), next), color: pick(COLOR_KEYS.filter((c) => c !== color && !NEIGHBOUR_HUES[color].includes(c)), next) };
-    why = "different shape and different colour";
-  } else if (lv === 2) {
-    odd = { ...same(9), glyph: pick(pool.filter((g) => g !== glyph), next) };
-    why = "a different shape";
-  } else if (lv === 3) {
-    odd = { ...same(9), color: pick(COLOR_KEYS.filter((c) => c !== color && !NEIGHBOUR_HUES[color].includes(c)), next) };
-    why = "a different colour";
-  } else if (lv === 4) {
-    odd = { ...same(9), color: pick(NEIGHBOUR_HUES[color], next) };
-    why = "very nearly the same colour, but not quite";
-  } else {
-    odd = { ...same(9), decor: 3 };
-    why = "three spots where the others have two";
+/* Built once and kept: the neighbour map is the same every game. */
+const ladderCache = new Map();
+function ladderGraph(length) {
+  if (ladderCache.has(length)) return ladderCache.get(length);
+  const words = UNIQUE_LADDER_WORDS.filter((w) => w.length === length);
+  const near = new Map(words.map((w) => [w, []]));
+  for (let i = 0; i < words.length; i++) {
+    for (let j = i + 1; j < words.length; j++) {
+      if (oneApart(words[i], words[j])) {
+        near.get(words[i]).push(words[j]);
+        near.get(words[j]).push(words[i]);
+      }
+    }
   }
-
-  const { options, answer } = place([{ token: odd }, { token: same(1) }, { token: same(2) }, { token: same(3) }], next);
-  return {
-    kind: "oddShape",
-    host: "pip",
-    level: lv,
-    prompt: "One of these does not belong. Tap it.",
-    hint: lv >= 4 ? "Look very closely — the difference is small." : "Shape, colour, spots. Check one thing at a time.",
-    stimulus: null,
-    study: null,
-    form: "choice",
-    options,
-    answer,
-    explain: `That one had ${why}.`,
-  };
+  const graph = { words, near };
+  ladderCache.set(length, graph);
+  return graph;
 }
 
-/* --- 4. Odd word out (Marlow) -------------------------------------------- */
+const LADDER_LENGTH = { 1: 3, 2: 3, 3: 4, 4: 4, 5: 4 };
 
-export function oddWord(next, level = 1) {
+export function ladder(next, level = 1) {
   const lv = clampLevel(level);
-  const cat = pick(CATEGORIES, next);
-  const inCount = lv >= 4 ? 4 : 3;
-  const ins = sample(cat.in, inCount, next);
-  const out = pick(cat.out, next);
-  const { options, answer } = place([{ text: out }, ...ins.map((text) => ({ text }))], next);
-  return {
-    kind: "oddWord",
-    host: "marlow",
-    level: lv,
-    prompt: "Three of these belong together. Which one does not?",
-    hint: "Say what the others have in common, out loud.",
-    stimulus: null,
-    study: null,
-    form: "choice",
-    options,
-    answer,
-    explain: `${out} is the odd one. ${cat.why}`,
-  };
+  const { words, near } = ladderGraph(LADDER_LENGTH[lv]);
+  for (let attempt = 0; attempt < 400; attempt++) {
+    const start = pick(words, next);
+    const twoAway = new Map();
+    for (const mid of near.get(start)) {
+      for (const end of near.get(mid)) {
+        if (end === start || oneApart(start, end)) continue;
+        twoAway.set(end, (twoAway.get(end) || []).concat(mid));
+      }
+    }
+    // Only ends with exactly one stepping stone: two bridges is two answers.
+    const ends = [...twoAway.entries()].filter(([, mids]) => new Set(mids).size === 1);
+    if (!ends.length) continue;
+    const [end, mids] = pick(ends, next);
+    const bridge = mids[0];
+
+    // Decoys are real words that fail one side of the crossing. From level 4
+    // they all fit the start, so the end has to be checked every time.
+    const nearStart = near.get(start).filter((w) => w !== bridge);
+    const nearEnd = near.get(end).filter((w) => w !== bridge);
+    const pool = lv >= 4 ? nearStart : shuffle(nearStart.concat(nearEnd), next);
+    const decoys = sample([...new Set(pool)], 3, next);
+    if (decoys.length < 3) continue;
+
+    const { options, answer } = place([{ text: bridge }, ...decoys.map((text) => ({ text }))], next);
+    return {
+      kind: "ladder",
+      host: "bramble",
+      level: lv,
+      prompt: "Which word fits in the middle? Only one letter may change at each step.",
+      hint: "Check both sides. Three of these change one letter from one end but not from the other.",
+      stimulus: { type: "text", text: `${start}  →  ?  →  ${end}` },
+      form: "choice",
+      options,
+      answer,
+      explain: `${start} → ${bridge} → ${end}.`,
+    };
+  }
+  return giveUp("ladder", lv);
 }
 
-/* --- 5. Mirror (Skiff) ---------------------------------------------------- */
+/* --- 7. Count the Shapes (Juno) ------------------------------------------ */
 
-const MIRROR_STEP = { 1: 90, 2: 90, 3: 45, 4: 45, 5: 30 };
+export function countSquares(cells, cols, rows) {
+  let found = 0;
+  for (let size = 1; size <= Math.min(cols, rows); size++) {
+    for (let y = 0; y + size <= rows; y++) {
+      for (let x = 0; x + size <= cols; x++) {
+        let whole = true;
+        for (let dy = 0; dy < size && whole; dy++) {
+          for (let dx = 0; dx < size; dx++) {
+            if (!cells[(y + dy) * cols + x + dx]) {
+              whole = false;
+              break;
+            }
+          }
+        }
+        if (whole) found += 1;
+      }
+    }
+  }
+  return found;
+}
+
+export function countRectangles(cells, cols, rows) {
+  let found = 0;
+  for (let h = 1; h <= rows; h++) {
+    for (let w = 1; w <= cols; w++) {
+      for (let y = 0; y + h <= rows; y++) {
+        for (let x = 0; x + w <= cols; x++) {
+          let whole = true;
+          for (let dy = 0; dy < h && whole; dy++) {
+            for (let dx = 0; dx < w; dx++) {
+              if (!cells[(y + dy) * cols + x + dx]) {
+                whole = false;
+                break;
+              }
+            }
+          }
+          if (whole) found += 1;
+        }
+      }
+    }
+  }
+  return found;
+}
+
+function connected(cells, cols, rows) {
+  const start = cells.indexOf(true);
+  if (start === -1) return false;
+  const seen = new Set([start]);
+  const queue = [start];
+  while (queue.length) {
+    const i = queue.pop();
+    const x = i % cols;
+    const y = Math.floor(i / cols);
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = x + dx;
+      const ny = y + dy;
+      const j = ny * cols + nx;
+      if (nx < 0 || ny < 0 || nx >= cols || ny >= rows || !cells[j] || seen.has(j)) continue;
+      seen.add(j);
+      queue.push(j);
+    }
+  }
+  return seen.size === cells.filter(Boolean).length;
+}
+
+const SHAPE_PLAN = {
+  1: { cols: 3, rows: 2, holes: 0, what: "squares" },
+  2: { cols: 3, rows: 3, holes: 0, what: "squares" },
+  3: { cols: 3, rows: 3, holes: 1, what: "squares" },
+  4: { cols: 4, rows: 4, holes: 3, what: "squares" },
+  5: { cols: 3, rows: 3, holes: 2, what: "rectangles" },
+};
+
+export function shapes(next, level = 1) {
+  const lv = clampLevel(level);
+  const plan = SHAPE_PLAN[lv];
+  for (let attempt = 0; attempt < 400; attempt++) {
+    const cells = new Array(plan.cols * plan.rows).fill(true);
+    for (const i of sample([...cells.keys()], plan.holes, next)) cells[i] = false;
+    if (!connected(cells, plan.cols, plan.rows)) continue;
+    const wanted = plan.what === "squares" ? countSquares(cells, plan.cols, plan.rows) : countRectangles(cells, plan.cols, plan.rows);
+    // Too few and it is trivial; too many and it stops being a puzzle and
+    // starts being a chore.
+    if (wanted < 6 || wanted > 22) continue;
+    return {
+      kind: "shapes",
+      host: "juno",
+      level: lv,
+      prompt: `How many ${plan.what} can you find? Count every size, not just the small ones.`,
+      hint: plan.what === "squares" ? "Count the 1×1 ones, then the 2×2 ones, then look for a 3×3." : "A rectangle can be any width and any height, including one cell wide.",
+      stimulus: { type: "figure", cells, cols: plan.cols, rows: plan.rows },
+      ...typed(wanted),
+      explain:
+        plan.what === "squares"
+          ? `${wanted}. It is easy to stop at the single cells and miss the bigger ones sitting on top of them.`
+          : `${wanted}. Every width and every height counts, which is a lot more than it looks.`,
+    };
+  }
+  return giveUp("shapes", lv);
+}
+
+/* --- 8. True or False (Wick) --------------------------------------------- */
+
+/* Knights and knaves. Each islander either always tells the truth or always
+   lies; every statement is about who is which. An arrangement works only if
+   each speaker's honesty matches whether what they said is true. */
+const CLAIMS = {
+  isLiar: {
+    make: (i, j, names) => `${names[i]}: "${names[j]} is lying."`,
+    holds: (truth, i, j) => !truth[j],
+  },
+  isHonest: {
+    make: (i, j, names) => `${names[i]}: "${names[j]} is telling the truth."`,
+    holds: (truth, i, j) => truth[j],
+  },
+  bothLie: {
+    make: (i, j, names, k) => `${names[i]}: "${names[j]} and ${names[k]} are both lying."`,
+    holds: (truth, i, j, k) => !truth[j] && !truth[k],
+  },
+  sameAsMe: {
+    make: (i, j, names) => `${names[i]}: "${names[j]} and I are not the same."`,
+    holds: (truth, i, j) => truth[i] !== truth[j],
+  },
+  someoneLies: {
+    make: (i, _j, names) => `${names[i]}: "At least one of us is lying."`,
+    holds: (truth) => truth.some((t) => !t),
+  },
+  allHonest: {
+    make: (i, _j, names) => `${names[i]}: "All of us are telling the truth."`,
+    holds: (truth) => truth.every((t) => t),
+  },
+};
+
+/* Each level keeps everything the one below it had and adds a statement that
+   reaches further - about the speaker as well as someone else, about a pair, or
+   about the whole island. The top level drops the two simplest kinds entirely. */
+const CLAIM_POOL = {
+  1: ["isLiar", "isHonest", "someoneLies"],
+  2: ["isLiar", "isHonest", "someoneLies", "sameAsMe"],
+  3: ["isLiar", "isHonest", "someoneLies", "sameAsMe", "allHonest"],
+  4: ["isLiar", "isHonest", "someoneLies", "sameAsMe", "allHonest", "bothLie"],
+  5: ["isLiar", "someoneLies", "sameAsMe", "allHonest", "bothLie"],
+};
+const LIAR_COUNT = { 1: 3, 2: 3, 3: 3, 4: 4, 5: 4 };
+
+export function liars(next, level = 1) {
+  const lv = clampLevel(level);
+  const n = LIAR_COUNT[lv];
+  for (let attempt = 0; attempt < 800; attempt++) {
+    const names = sample(NAMES, n, next);
+    const said = [];
+    for (let i = 0; i < n; i++) {
+      const type = pick(CLAIM_POOL[lv], next);
+      const rest = [...Array(n).keys()].filter((k) => k !== i);
+      const [j, k] = sample(rest, 2, next);
+      said.push({ type, i, j, k: k === undefined ? rest[0] : k });
+    }
+
+    // Every possible arrangement of honest and lying, kept only if consistent.
+    const fits = [];
+    for (let mask = 0; mask < 1 << n; mask++) {
+      const truth = [...Array(n).keys()].map((i) => Boolean(mask & (1 << i)));
+      const ok = said.every((s) => CLAIMS[s.type].holds(truth, s.i, s.j, s.k) === truth[s.i]);
+      if (ok) fits.push(truth);
+      if (fits.length > 1) break;
+    }
+    if (fits.length !== 1) continue;
+
+    const truth = fits[0];
+    const honest = truth.filter(Boolean).length;
+    // Ask about whichever side happens to be alone, so the player cannot
+    // assume the shape of the answer before reading.
+    let asking;
+    let wanted;
+    if (honest === 1) {
+      asking = "Only one of them is telling the truth. Which one?";
+      wanted = truth.indexOf(true);
+    } else if (honest === n - 1) {
+      asking = "Only one of them is lying. Which one?";
+      wanted = truth.indexOf(false);
+    } else {
+      continue;
+    }
+
+    const wrong = names.filter((_, i) => i !== wanted);
+    const { options, answer } = place([{ text: names[wanted] }, ...wrong.map((text) => ({ text }))], next);
+    return {
+      kind: "liars",
+      host: "wick",
+      level: lv,
+      prompt: asking,
+      hint: "Suppose the first one is telling the truth and follow it through. If you hit a contradiction, they were lying.",
+      stimulus: { type: "lines", lines: said.map((s) => CLAIMS[s.type].make(s.i, s.j, names, s.k)) },
+      form: "choice",
+      options,
+      answer,
+      explain: names.map((nm, i) => `${nm} was ${truth[i] ? "telling the truth" : "lying"}`).join(", ") + ".",
+    };
+  }
+  return giveUp("liars", lv);
+}
+
+/* --- 9. Mirror (Skiff) --------------------------------------------------- */
+
+/* The only puzzle kept from recognition, because telling a turn from a flip is
+   not recognition once the angles stop being right angles. */
+const MIRROR_STEP = { 1: 90, 2: 60, 3: 45, 4: 36, 5: 30 };
 
 export function mirror(next, level = 1) {
   const lv = clampLevel(level);
@@ -243,9 +818,8 @@ export function mirror(next, level = 1) {
     host: "skiff",
     level: lv,
     prompt: "Three of these are the same shape turned round. One is flipped. Tap the flipped one.",
-    hint: "Pick a corner and follow it. A turn keeps the order; a flip reverses it.",
+    hint: "Follow one corner all the way round the outline. A turn keeps the order; a flip reverses it.",
     stimulus: null,
-    study: null,
     form: "choice",
     options,
     answer,
@@ -253,506 +827,436 @@ export function mirror(next, level = 1) {
   };
 }
 
-/* --- 6. Sequence (Vine) --------------------------------------------------- */
+/* --- 10. Who's Who (Marlow) ---------------------------------------------- */
 
-/* A pattern is a set of independent rules, each of which decides one property
-   of the nth token. Level decides how many run at once. */
-function sequenceRules(next, lv) {
-  const rules = [];
-  const choices = ["color", "shape", "rotate", "decor"];
-  const wanted = lv >= 4 ? 2 : 1;
-  const chosen = sample(lv <= 2 ? ["color", "shape"] : choices, wanted, next);
-  // Once spots are in play every shape on the row has to be able to hold them.
-  const shapes = chosen.includes("decor") ? SOLID_KEYS : PLAIN_KEYS;
-  for (const c of chosen) {
-    if (c === "color") rules.push({ prop: "color", cycle: sample(COLOR_KEYS, lv >= 4 ? 3 : 2, next) });
-    if (c === "shape") rules.push({ prop: "glyph", cycle: sample(shapes, lv >= 4 ? 3 : 2, next) });
-    if (c === "rotate") rules.push({ prop: "rotate", step: pick([45, 90], next) });
-    if (c === "decor") rules.push({ prop: "decor", cycle: sample([1, 2, 3], lv >= 4 ? 3 : 2, next) });
-  }
-  return { rules, shapes };
-}
-
-function sequenceAt(rules, base, n) {
-  const t = { ...base };
-  for (const r of rules) {
-    if (r.cycle) t[r.prop] = r.cycle[n % r.cycle.length];
-    else if (r.step != null) t[r.prop] = (n * r.step) % 360;
-  }
-  return t;
-}
-
-export function sequence(next, level = 1) {
-  const lv = clampLevel(level);
-  const { rules, shapes } = sequenceRules(next, lv);
-  const base = { glyph: pick(shapes, next), color: pick(COLOR_KEYS, next), rotate: 0, decor: 0, seed: 7 };
-  const shown = lv >= 3 ? 5 : 4;
-  const row = [];
-  for (let i = 0; i < shown; i++) row.push({ ...sequenceAt(rules, base, i), seed: 100 + i });
-  const correct = { ...sequenceAt(rules, base, shown), seed: 200 };
-
-  // A wrong option is the right answer with exactly one rule broken, so every
-  // option is a thing the pattern could plausibly have done.
-  const wrongs = [];
-  const guard = 40;
-  for (let g = 0; g < guard && wrongs.length < 3; g++) {
-    const off = pick(rules, next);
-    const w = { ...correct, seed: 300 + wrongs.length };
-    if (off.cycle) w[off.prop] = pick(off.cycle.filter((v) => v !== correct[off.prop]), next);
-    else w.rotate = (correct.rotate + pick([off.step, -off.step, off.step * 2], next) + 720) % 360;
-    if (w.decor < 0) continue;
-    const key = (t) => `${t.glyph}|${t.color}|${t.rotate}|${t.decor}`;
-    if (key(w) === key(correct) || wrongs.some((x) => key(x) === key(w))) continue;
-    wrongs.push(w);
-  }
-  // Falling back to a plain shape swap keeps the puzzle solvable even when the
-  // rules on show cannot produce three distinct near misses.
-  while (wrongs.length < 3) {
-    const w = { ...correct, glyph: pick(shapes.filter((g) => g !== correct.glyph), next), seed: 300 + wrongs.length };
-    if (!wrongs.some((x) => x.glyph === w.glyph)) wrongs.push(w);
-  }
-
-  const { options, answer } = place([{ token: correct }, ...wrongs.map((token) => ({ token }))], next);
-  const names = rules.map((r) => (r.prop === "color" ? "colour" : r.prop === "glyph" ? "shape" : r.prop === "rotate" ? "the way it points" : "how many spots"));
-  // `pattern` is what was actually varying, which the explanation reads out and
-  // the simulator uses to check the ladder is getting harder.
-  const pattern = rules.map((r) => r.prop);
-  return {
-    kind: "sequence",
-    host: "vine",
-    level: lv,
-    prompt: "What comes next in the row?",
-    hint: rules.length > 1 ? "Two things are changing at once." : "One thing is changing. Find which.",
-    stimulus: { type: "tokens", items: row, tail: "?" },
-    study: null,
-    form: "choice",
-    pattern,
-    options,
-    answer,
-    explain: `The pattern was ${names.join(" and ")}.`,
-  };
-}
-
-/* --- 7. Balance (Plum) ---------------------------------------------------- */
-
-/* Three fruits with whole-number weights, shown only as balanced scales. The
-   player never sees a number - the relations are the whole of the input. */
-export function balance(next, level = 1) {
-  const lv = clampLevel(level);
-  const [gA, gB, gC] = sample(PLAIN_KEYS, 3, next);
-  const [cA, cB, cC] = sample(NAMED_COLORS, 3, next);
-  const A = { glyph: gA, color: cA, seed: 11 };
-  const B = { glyph: gB, color: cB, seed: 12 };
-  const C = { glyph: gC, color: cC, seed: 13 };
-  const k = 2 + Math.floor(next() * 2); // small ones per middle one
-  const m = 2 + Math.floor(next() * 2); // middle ones per big one
-  const rep = (item, n) => Array.from({ length: n }, (_, i) => ({ ...item, seed: item.seed + i }));
-  const one = (item) => `one ${describe(item)}`;
-  const many = (item) => describe(item, 2);
-
-  const facts = [{ left: rep(A, k), right: [B] }];
-  let answer;
-  let question;
-  let working;
-
-  if (lv === 1) {
-    const q = 1 + Math.floor(next() * 2);
-    answer = k * q;
-    question = `How many ${many(A)} balance ${q === 1 ? one(B) : `two ${many(B)}`}?`;
-    working = `each ${describe(B)} is ${k} of them, so ${k} × ${q} = ${answer}`;
-  } else {
-    facts.push({ left: rep(B, m), right: [C] });
-    if (lv === 2) {
-      answer = k * m;
-      question = `How many ${many(A)} balance ${one(C)}?`;
-      working = `${one(C)} is ${m} ${many(B)}, and each of those is ${k} ${many(A)}, so ${m} × ${k} = ${answer}`;
-    } else if (lv === 3) {
-      answer = k * m * 2;
-      question = `How many ${many(A)} balance two ${many(C)}?`;
-      working = `${k} × ${m} × 2 = ${answer}`;
-    } else if (lv === 4) {
-      answer = k + k * m;
-      question = `How many ${many(A)} balance ${one(B)} and ${one(C)} together?`;
-      working = `${k} for the ${describe(B)} plus ${k * m} for the ${describe(C)} = ${answer}`;
-    } else {
-      answer = k * m - k;
-      question = `${one(C)} balances ${one(B)} and how many ${many(A)}?`;
-      working = `${k * m} − ${k} = ${answer}`;
-    }
-  }
-
-  const { options, answer: idx } = place(
-    [{ text: String(answer) }, ...numberOptions(answer, next).map((v) => ({ text: String(v) }))],
-    next
-  );
-  const asked = question[0].toUpperCase() + question.slice(1);
-  return {
-    kind: "balance",
-    host: "plum",
-    level: lv,
-    prompt: asked,
-    hint: `Work out what ${one(B)} is worth in ${many(A)} first.`,
-    stimulus: { type: "scales", facts },
-    study: null,
-    form: "choice",
-    options,
-    answer: idx,
-    explain: `${answer}. ${working}.`,
-  };
-}
-
-/* --- 8. Flash memory (Nox) ------------------------------------------------ */
-
-const FLASH_ROW = { 1: 3, 2: 4, 3: 4, 4: 5, 5: 6 };
-const FLASH_SECONDS = { 1: 4, 2: 3.5, 3: 3.2, 4: 3, 5: 2.6 };
-
-export function flash(next, level = 1) {
-  const lv = clampLevel(level);
-  const n = FLASH_ROW[lv];
-  const glyphs = sample(PLAIN_KEYS, n, next);
-  const colors = sample(COLOR_KEYS, n, next);
-  const row = glyphs.map((glyph, i) => ({ glyph, color: colors[i], seed: 400 + i }));
-
-  // From level 4 the impostor wears a colour that was in the row, so "I
-  // remember a teal one" stops being enough.
-  const spareGlyph = pick(PLAIN_KEYS.filter((g) => !glyphs.includes(g)), next);
-  const impostor =
-    lv >= 4
-      ? { glyph: spareGlyph, color: pick(colors, next), seed: 500 }
-      : { glyph: spareGlyph, color: pick(COLOR_KEYS.filter((c) => !colors.includes(c)), next), seed: 500 };
-
-  const decoys = sample(row, 3, next).map((t) => ({ ...t, seed: t.seed + 50 }));
-  const { options, answer } = place([{ token: impostor }, ...decoys.map((token) => ({ token }))], next);
-  return {
-    kind: "flash",
-    host: "nox",
-    level: lv,
-    prompt: "Which one was NOT in the garden?",
-    hint: "Name them to yourself while you look. Names stick better than pictures.",
-    stimulus: null,
-    study: { seconds: FLASH_SECONDS[lv], stimulus: { type: "tokens", items: row } },
-    form: "choice",
-    options,
-    answer,
-    explain: "That one never appeared.",
-  };
-}
-
-/* --- 9. Word hunt (Mote) -------------------------------------------------- */
-
-const HUNT_SIZE = { 1: 4, 2: 4, 3: 5, 4: 5, 5: 5 };
-const HUNT_LENGTHS = { 1: [3, 4], 2: [4], 3: [4, 5], 4: [5], 5: [5] };
-/* Which of the eight straight runs a word may be hidden along, by level. */
-const HUNT_DIRS = { 1: 2, 2: 2, 3: 4, 4: 4, 5: 8 };
-const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
-
-/* Every straight run of `len` cells in a grid, as arrays of indices. Used both
-   to place the word and - the important half - to prove it is not accidentally
-   sitting somewhere else once the filler letters go in. */
-function lines(size, len) {
-  const dirs = [[1, 0], [0, 1], [1, 1], [1, -1], [-1, 0], [0, -1], [-1, -1], [-1, 1]];
+function permutations(list) {
+  if (list.length <= 1) return [list];
   const out = [];
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      for (const [dx, dy] of dirs) {
-        const path = [];
-        for (let i = 0; i < len; i++) {
-          const nx = x + dx * i;
-          const ny = y + dy * i;
-          if (nx < 0 || ny < 0 || nx >= size || ny >= size) break;
-          path.push(ny * size + nx);
-        }
-        if (path.length === len) out.push(path);
-      }
-    }
+  for (let i = 0; i < list.length; i++) {
+    const rest = list.slice(0, i).concat(list.slice(i + 1));
+    for (const p of permutations(rest)) out.push([list[i], ...p]);
   }
   return out;
 }
 
-export function wordHunt(next, level = 1) {
+const LOGIC_PEOPLE = { 1: 3, 2: 3, 3: 3, 4: 4, 5: 4 };
+
+export function logic(next, level = 1) {
   const lv = clampLevel(level);
-  const size = HUNT_SIZE[lv];
-  const lengths = HUNT_LENGTHS[lv];
-  // A palindrome reads the same backwards, so it is always in the grid twice
-  // and the player can be right in a way the game scores as wrong.
-  const entry = pick(
-    WORDS.filter((w) => lengths.includes(w.w.length) && w.w !== w.w.split("").reverse().join("")),
-    next
-  );
-  const word = entry.w;
-  const all = lines(size, word.length);
-  // Level decides which directions are on the table: straight forward at
-  // first, then diagonals, then backwards as well.
-  const allowed = all.filter((path) => {
-    const dx = (path[1] % size) - (path[0] % size);
-    const dy = Math.floor(path[1] / size) - Math.floor(path[0] / size);
-    if (lv <= 2) return (dx === 1 && dy === 0) || (dx === 0 && dy === 1);
-    if (lv <= 4) return dx >= 0 && dy >= -1 && !(dx === 0 && dy === -1);
-    return true;
-  });
+  const n = LOGIC_PEOPLE[lv];
+  const set = pick(LOGIC_SETS, next);
+  const people = sample(NAMES, n, next);
+  const things = sample(set.items.slice(0, Math.max(n, 3)), n, next);
+  const truth = shuffle([...things.keys()], next); // person i has things[truth[i]]
+  const worlds = permutations([...things.keys()]);
 
-  const cells = new Array(size * size).fill(null);
-  const path = pick(allowed, next);
-  path.forEach((cell, i) => {
-    cells[cell] = word[i];
-  });
-
-  // Fill the rest, then check the word does not now appear a second time. A
-  // grid with two copies has two right answers and one of them scores zero.
-  const spellsWord = () => all.filter((p) => p.map((c) => cells[c]).join("") === word).length;
-  for (let cell = 0; cell < cells.length; cell++) {
-    if (cells[cell]) continue;
-    // Walk the whole alphabet in a random order rather than guessing letters:
-    // if any letter is safe here this finds it, and the grid never degenerates
-    // into a field of one filler letter.
-    for (const letter of shuffle(ALPHABET, next)) {
-      cells[cell] = letter;
-      if (spellsWord() === 1) break;
-      cells[cell] = null;
-    }
-    if (!cells[cell]) cells[cell] = word[0];
-  }
-
-  return {
-    kind: "wordHunt",
-    host: "mote",
-    level: lv,
-    prompt: `Find the hidden ${word.length}-letter word — it runs ${
-      lv >= 5 ? "in a straight line, and it may run backwards" : lv >= 3 ? "in a straight line, maybe diagonally" : "straight across or straight down"
-    }.`,
-    hint: entry.hint,
-    stimulus: null,
-    study: null,
-    form: "grid",
-    grid: { size, cells },
-    directions: HUNT_DIRS[lv],
-    options: null,
-    answer: path,
-    word,
-    explain: `${word} — ${entry.hint.toLowerCase()}.`,
-  };
-}
-
-/* --- 10. Number chain (Tock) ---------------------------------------------- */
-
-const OPS = {
-  "+": (a, b) => a + b,
-  "−": (a, b) => a - b,
-  "×": (a, b) => a * b,
-  "÷": (a, b) => (b !== 0 && a % b === 0 ? a / b : NaN),
-};
-const OP_KEYS = Object.keys(OPS);
-
-export function numberChain(next, level = 1) {
-  const lv = clampLevel(level);
-  if (lv <= 2) return oneOperator(next, lv);
-  if (lv === 4) return missingNumber(next, lv);
-  return twoOperators(next, lv);
-}
-
-function oneOperator(next, lv) {
-  const pool = lv === 1 ? ["+", "−", "×"] : OP_KEYS;
-  for (let attempt = 0; attempt < 200; attempt++) {
-    const op = pick(pool, next);
-    const a = 2 + Math.floor(next() * (lv === 1 ? 9 : 12));
-    const b = 2 + Math.floor(next() * (lv === 1 ? 8 : 10));
-    const target = OPS[op](a, b);
-    if (!Number.isFinite(target) || target < 0) continue;
-    // Only keep it if this is the one operator that hits the target - two
-    // right answers and three quarters of the marks are wrong.
-    const hits = pool.filter((k) => OPS[k](a, b) === target);
-    if (hits.length !== 1) continue;
-    const wrong = pool.filter((k) => k !== op);
-    const { options, answer } = place([{ text: op }, ...sample(wrong, 3, next).map((text) => ({ text }))], next);
-    return {
-      kind: "numberChain",
-      host: "tock",
-      level: lv,
-      prompt: "Which sign makes this true?",
-      hint: "Try each sign in turn and see which one lands.",
-      stimulus: { type: "sum", text: `${a}  ?  ${b}  =  ${target}` },
-      study: null,
-      form: "choice",
-      options,
-      answer,
-      explain: `${a} ${op} ${b} = ${target}.`,
-    };
-  }
-  return oneOperator(next, 1);
-}
-
-function twoOperators(next, lv) {
-  const pool = lv >= 5 ? OP_KEYS : ["+", "−", "×"];
-  for (let attempt = 0; attempt < 400; attempt++) {
-    const o1 = pick(pool, next);
-    const o2 = pick(pool, next);
-    const a = 2 + Math.floor(next() * 9);
-    const b = 2 + Math.floor(next() * 7);
-    const c = 2 + Math.floor(next() * 7);
-    const mid = OPS[o1](a, b);
-    const target = OPS[o2](mid, c);
-    if (!Number.isFinite(target) || target < 0 || target > 90 || mid < 0) continue;
-    // Brackets, not a rule about which sign goes first: a nine-year-old should
-    // not have to guess whether this game believes in BODMAS.
-    const pairs = [];
-    for (const p of pool) for (const q of pool) pairs.push([p, q]);
-    const hits = pairs.filter(([p, q]) => OPS[q](OPS[p](a, b), c) === target);
-    if (hits.length !== 1) continue;
-    const wrongPairs = pairs.filter(([p, q]) => !(p === o1 && q === o2));
-    const { options, answer } = place(
-      [{ text: `${o1}  then  ${o2}` }, ...sample(wrongPairs, 3, next).map(([p, q]) => ({ text: `${p}  then  ${q}` }))],
-      next
-    );
-    return {
-      kind: "numberChain",
-      host: "tock",
-      level: lv,
-      prompt: "Which two signs make this true?",
-      hint: "Do the bracket first, then the second sign.",
-      stimulus: { type: "sum", text: `( ${a}  ?  ${b} )  ?  ${c}  =  ${target}` },
-      study: null,
-      form: "choice",
-      options,
-      answer,
-      explain: `(${a} ${o1} ${b}) ${o2} ${c} = ${mid} ${o2} ${c} = ${target}.`,
-    };
-  }
-  return oneOperator(next, 2);
-}
-
-function missingNumber(next, lv) {
-  for (let attempt = 0; attempt < 300; attempt++) {
-    const o1 = pick(["+", "−", "×"], next);
-    const o2 = pick(["+", "−"], next);
-    const a = 2 + Math.floor(next() * 8);
-    const hidden = 2 + Math.floor(next() * 8);
-    const c = 2 + Math.floor(next() * 8);
-    const mid = OPS[o1](a, hidden);
-    const target = OPS[o2](mid, c);
-    if (!Number.isFinite(target) || target < 0 || mid < 0 || target > 90) continue;
-    const { options, answer } = place(
-      [{ text: String(hidden) }, ...numberOptions(hidden, next, [1, 2, 3]).map((v) => ({ text: String(v) }))],
-      next
-    );
-    return {
-      kind: "numberChain",
-      host: "tock",
-      level: lv,
-      prompt: "Which number is hiding?",
-      hint: "Work backwards from the answer.",
-      stimulus: { type: "sum", text: `( ${a}  ${o1}  ? )  ${o2}  ${c}  =  ${target}` },
-      study: null,
-      form: "choice",
-      options,
-      answer,
-      explain: `(${a} ${o1} ${hidden}) ${o2} ${c} = ${target}.`,
-    };
-  }
-  return oneOperator(next, 2);
-}
-
-/* --- 11. Counting (Fig) --------------------------------------------------- */
-
-const COUNT_TOTAL = { 1: 8, 2: 10, 3: 13, 4: 15, 5: 18 };
-
-const PLURAL = {
-  circle: "circles", square: "squares", triangle: "triangles", diamond: "diamonds",
-  heart: "hearts", star: "stars", flower: "flowers", moon: "moons", drop: "raindrops",
-};
-
-/* A jittered grid, not a free scatter: free scatter piles tokens on top of one
-   another and then the count is a matter of opinion. */
-function scatter(count, next, width, height) {
-  const cols = Math.ceil(Math.sqrt(count * (width / height)));
-  const rows = Math.ceil(count / cols);
-  const cw = width / cols;
-  const ch = height / rows;
-  const spots = [];
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      spots.push([cw * (c + 0.5) + (next() - 0.5) * cw * 0.3, ch * (r + 0.5) + (next() - 0.5) * ch * 0.3]);
+  // Clues, each a sentence and a test. Only the true ones are candidates.
+  const candidates = [];
+  for (let p = 0; p < n; p++) {
+    for (let t = 0; t < n; t++) {
+      if (truth[p] !== t) {
+        candidates.push({ text: `${people[p]} does not have ${things[t]}.`, holds: (w) => w[p] !== t });
+      }
     }
   }
-  return shuffle(spots, next).slice(0, count);
-}
-
-export function counting(next, level = 1) {
-  const lv = clampLevel(level);
-  const total = COUNT_TOTAL[lv];
-  const width = 320;
-  const height = 190;
-  const [gA, gB] = sample(Object.keys(PLURAL), 2, next);
-  const [cA, cB] = sample(NAMED_COLORS, 2, next);
-
-  // Every item is one of the four (shape, colour) pairs, so any of the five
-  // question shapes below has a countable answer.
-  const kinds = [
-    { glyph: gA, color: cA },
-    { glyph: gA, color: cB },
-    { glyph: gB, color: cA },
-    { glyph: gB, color: cB },
-  ];
-  const nameA = PLURAL[gA];
-  const nameB = PLURAL[gB];
-
-  let counts;
-  let items;
-  let answer;
-  let question;
-  let working;
-  // "How many pink circles?" answered by "none" is a question about an empty
-  // patch of paper, so the meadow is re-sown until the answer is worth asking.
-  for (let attempt = 0; attempt < 60; attempt++) {
-    counts = [0, 0, 0, 0];
-    items = [];
-    const spots = scatter(total, next, width, height);
-    for (let i = 0; i < total; i++) {
-      const k = Math.floor(next() * 4);
-      counts[k] += 1;
-      items.push({ ...kinds[k], x: spots[i][0], y: spots[i][1], rotate: (next() - 0.5) * 40, scale: 0.85 + next() * 0.3, seed: 600 + i });
+  for (let p = 0; p < n; p++) {
+    for (let t = 0; t < n; t++) {
+      if (t === truth[p]) continue;
+      const pair = shuffle([truth[p], t], next);
+      candidates.push({
+        text: `${people[p]} has either ${things[pair[0]]} or ${things[pair[1]]}.`,
+        holds: (w) => w[p] === pair[0] || w[p] === pair[1],
+      });
     }
-    if (lv === 1) {
-      answer = counts[0] + counts[1];
-      question = `How many ${nameA} are there?`;
-      working = `${counts[0]} + ${counts[1]} of them`;
-    } else if (lv === 2) {
-      answer = counts[0] + counts[2];
-      question = `How many ${COLOR_NAMES[cA]} things are there?`;
-      working = `${counts[0]} ${nameA} and ${counts[2]} ${nameB}`;
-    } else if (lv === 3) {
-      answer = counts[0];
-      question = `How many ${COLOR_NAMES[cA]} ${nameA} are there?`;
-      working = `both things had to be true`;
-    } else if (lv === 4) {
-      answer = counts[1];
-      question = `How many ${nameA} are NOT ${COLOR_NAMES[cA]}?`;
-      working = `${counts[0] + counts[1]} ${nameA} in all, ${counts[0]} of them ${COLOR_NAMES[cA]}`;
-    } else {
-      answer = Math.abs(counts[0] + counts[1] - (counts[2] + counts[3]));
-      const more = counts[0] + counts[1] >= counts[2] + counts[3] ? nameA : nameB;
-      question = `What is the difference between how many ${nameA} and how many ${nameB} there are?`;
-      working = `${counts[0] + counts[1]} ${nameA}, ${counts[2] + counts[3]} ${nameB} — ${answer} more ${more}`;
+  }
+  for (let a = 0; a < n; a++) {
+    for (let b = a + 1; b < n; b++) {
+      for (let t = 0; t < n; t++) {
+        if (truth[a] !== t && truth[b] !== t) {
+          candidates.push({
+            text: `Neither ${people[a]} nor ${people[b]} has ${things[t]}.`,
+            holds: (w) => w[a] !== t && w[b] !== t,
+          });
+        }
+      }
     }
-    if (answer >= 2) break;
+  }
+  // Level 4 and up drops the "either/or" clues, which are the ones that hand
+  // you a foothold, and leaves only what is ruled out.
+  const pool = shuffle(lv >= 4 ? candidates.filter((c) => !c.text.includes("either")) : candidates, next);
+
+  const clues = [];
+  let left = worlds;
+  for (const clue of pool) {
+    if (left.length === 1) break;
+    const narrowed = left.filter(clue.holds);
+    if (narrowed.length === left.length) continue; // says nothing new
+    clues.push(clue);
+    left = narrowed;
+  }
+  if (left.length !== 1 || clues.length < 2) return giveUp("logic", lv);
+
+  // Throw out any clue the answer does not need, then check it still holds.
+  for (let i = clues.length - 1; i >= 0; i--) {
+    const without = clues.filter((_, k) => k !== i);
+    if (worlds.filter((w) => without.every((c) => c.holds(w))).length === 1) clues.splice(i, 1);
   }
 
-  const { options, answer: idx } = place(
-    [{ text: String(answer) }, ...numberOptions(answer, next, [1, 2, 3]).map((v) => ({ text: String(v) }))],
+  const who = int(next, 0, n - 1);
+  const wanted = things[truth[who]];
+  const { options, answer } = place(
+    [{ text: wanted }, ...things.filter((t) => t !== wanted).map((text) => ({ text }))],
     next
   );
   return {
-    kind: "counting",
-    host: "fig",
+    kind: "logic",
+    host: "marlow",
     level: lv,
-    prompt: question,
-    hint: "Count in twos, and start from a corner so you do not lose your place.",
-    stimulus: { type: "scene", items, width, height },
-    study: null,
+    prompt: `Which ${set.of} does ${people[who]} have?`,
+    hint: "Draw a grid of names against things and cross off everything each clue rules out.",
+    stimulus: { type: "lines", lines: shuffle(clues, next).map((c) => c.text) },
     form: "choice",
     options,
-    answer: idx,
-    explain: `${answer} — ${working}.`,
+    answer,
+    explain: people.map((p, i) => `${p} has ${things[truth[i]]}`).join(", ") + ".",
   };
+}
+
+/* --- 11. Secret Code (Mote) ---------------------------------------------- */
+
+const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+const shiftWord = (word, by) =>
+  word
+    .split("")
+    .map((ch) => ALPHABET[(ALPHABET.indexOf(ch) + by + 26) % 26])
+    .join("");
+
+const CIPHER_PLAN = { 1: { len: 3, max: 2 }, 2: { len: 4, max: 3 }, 3: { len: 4, max: 5 }, 4: { len: 4, max: 8 }, 5: { len: 4, max: 12 } };
+
+export function cipher(next, level = 1) {
+  const lv = clampLevel(level);
+  const plan = CIPHER_PLAN[lv];
+  const words = UNIQUE_LADDER_WORDS.filter((w) => w.length === plan.len);
+  const word = pick(words, next);
+  const by = int(next, 1, plan.max);
+  const example = pick(words.filter((w) => w !== word), next);
+
+  // The tray holds the answer's letters plus three that are not in it, so the
+  // code has to be broken rather than the tray anagrammed.
+  const spare = sample(ALPHABET.filter((ch) => !word.includes(ch)), 3, next);
+  const tray = shuffle(word.split("").concat(spare), next);
+
+  return {
+    kind: "cipher",
+    host: "mote",
+    level: lv,
+    prompt: "Break the code and spell the word.",
+    hint: `Every letter has moved ${by} place${by === 1 ? "" : "s"} forward in the alphabet. Count backwards to undo it.`,
+    stimulus: {
+      type: "lines",
+      lines: [`In this code ${example} is written ${shiftWord(example, by)}.`, `Now read this: ${shiftWord(word, by)}`],
+    },
+    form: "letters",
+    letters: tray,
+    options: null,
+    answer: word,
+    explain: `${shiftWord(word, by)} shifted back ${by} is ${word}.`,
+  };
+}
+
+/* --- 12. Fold It (Skiff's cousin, Fig) ------------------------------------ */
+
+const cross3 = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const neg3 = (v) => v.map((x) => -x);
+const key3 = (v) => v.join(",");
+
+/* Roll the cube across the net. Each square gets the 3D direction its face
+   ends up pointing; two squares are opposite when their directions are
+   negatives. Screen y grows downwards, which is why "up" and "down" are the
+   way round they are. */
+export function foldNet(cells) {
+  const at = new Map(cells.map((c, i) => [`${c.x},${c.y}`, i]));
+  const facing = new Array(cells.length).fill(null);
+  facing[0] = { n: [0, 0, 1], u: [0, 1, 0] };
+  const queue = [0];
+  while (queue.length) {
+    const i = queue.shift();
+    const { n, u } = facing[i];
+    const r = cross3(u, n);
+    const rolls = [
+      { dx: 1, dy: 0, n: r, u },
+      { dx: -1, dy: 0, n: neg3(r), u },
+      { dx: 0, dy: -1, n: u, u: neg3(n) },
+      { dx: 0, dy: 1, n: neg3(u), u: n },
+    ];
+    for (const roll of rolls) {
+      const j = at.get(`${cells[i].x + roll.dx},${cells[i].y + roll.dy}`);
+      if (j === undefined || facing[j]) continue;
+      facing[j] = { n: roll.n, u: roll.u };
+      queue.push(j);
+    }
+  }
+  return facing;
+}
+
+/* A shape of six squares is a cube net exactly when folding it lands one face
+   on each of the six directions. Grow random shapes and keep those. */
+function growNet(next) {
+  for (let attempt = 0; attempt < 200; attempt++) {
+    const cells = [{ x: 0, y: 0 }];
+    while (cells.length < 6) {
+      const from = pick(cells, next);
+      const [dx, dy] = pick([[1, 0], [-1, 0], [0, 1], [0, -1]], next);
+      const spot = { x: from.x + dx, y: from.y + dy };
+      if (cells.some((c) => c.x === spot.x && c.y === spot.y)) continue;
+      cells.push(spot);
+    }
+    const facing = foldNet(cells);
+    if (facing.some((f) => !f)) continue;
+    if (new Set(facing.map((f) => key3(f.n))).size !== 6) continue;
+    return cells;
+  }
+  return null;
+}
+
+function netDistance(cells, from, to) {
+  const at = new Map(cells.map((c, i) => [`${c.x},${c.y}`, i]));
+  const seen = new Map([[from, 0]]);
+  const queue = [from];
+  while (queue.length) {
+    const i = queue.shift();
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const j = at.get(`${cells[i].x + dx},${cells[i].y + dy}`);
+      if (j === undefined || seen.has(j)) continue;
+      seen.set(j, seen.get(i) + 1);
+      queue.push(j);
+    }
+  }
+  return seen.get(to);
+}
+
+const FOLD_REACH = { 1: [2, 2], 2: [2, 3], 3: [3, 3], 4: [3, 4], 5: [4, 5] };
+
+export function folding(next, level = 1) {
+  const lv = clampLevel(level);
+  const [near, far] = FOLD_REACH[lv];
+  for (let attempt = 0; attempt < 400; attempt++) {
+    const cells = growNet(next);
+    if (!cells) continue;
+    const facing = foldNet(cells);
+    const pairs = [];
+    for (let i = 0; i < 6; i++) {
+      for (let j = i + 1; j < 6; j++) {
+        if (key3(facing[i].n) === key3(neg3(facing[j].n))) pairs.push([i, j]);
+      }
+    }
+    const usable = pairs.filter(([i, j]) => {
+      const d = netDistance(cells, i, j);
+      return d >= near && d <= far;
+    });
+    if (!usable.length) continue;
+    const [a, b] = pick(usable, next);
+    const from = next() < 0.5 ? a : b;
+    const to = from === a ? b : a;
+
+    const glyphs = sample(PLAIN_KEYS, 6, next);
+    const colors = sample(COLOR_KEYS, 6, next);
+    const faces = cells.map((c, i) => ({ ...c, token: { glyph: glyphs[i], color: colors[i], seed: 40 + i } }));
+
+    const minX = Math.min(...cells.map((c) => c.x));
+    const minY = Math.min(...cells.map((c) => c.y));
+    for (const f of faces) {
+      f.x -= minX;
+      f.y -= minY;
+    }
+    const wrong = [...Array(6).keys()].filter((i) => i !== from && i !== to);
+    const { options, answer } = place(
+      [{ token: faces[to].token }, ...sample(wrong, 3, next).map((i) => ({ token: faces[i].token }))],
+      next
+    );
+    return {
+      kind: "folding",
+      host: "fig",
+      level: lv,
+      prompt: "Fold this up into a cube. Which face ends up opposite the ringed one?",
+      hint: "Faces that touch on the paper always end up next to each other, never opposite. Rule those out first.",
+      stimulus: {
+        type: "net",
+        faces,
+        cols: Math.max(...faces.map((f) => f.x)) + 1,
+        rows: Math.max(...faces.map((f) => f.y)) + 1,
+        ring: from,
+      },
+      form: "choice",
+      options,
+      answer,
+      explain: `Rolling the cube across the paper puts those two on opposite sides.`,
+    };
+  }
+  return giveUp("folding", lv);
+}
+
+/* --- 13. Word Problems (Sable) ------------------------------------------- */
+
+/* Every one of these is built forwards from numbers the generator picks, and
+   then solved backwards - by search or by simulation - to produce the answer.
+   The two directions never share an equation, so a wrong formula shows up as a
+   mismatch rather than being confirmed by itself. */
+const STORIES = {
+  shareOut(next) {
+    const small = int(next, 3, 14);
+    const gap = int(next, 2, 9);
+    const total = small * 2 + gap;
+    const who = sample(NAMES, 2, next);
+    let answer = null;
+    for (let b = 0; b <= total; b++) if (b + (b + gap) === total) answer = b;
+    return {
+      text: `${who[0]} and ${who[1]} have ${total} marbles between them. ${who[0]} has ${gap} more than ${who[1]}. How many does ${who[1]} have?`,
+      answer,
+      working: `${who[1]} has ${answer}, ${who[0]} has ${answer + gap}, and together that is ${total}.`,
+    };
+  },
+
+  cutTheLog(next) {
+    const pieces = int(next, 4, 9);
+    const minutes = int(next, 2, 6);
+    return {
+      text: `It takes ${minutes} minutes to make one cut through a log. How many minutes to cut a log into ${pieces} pieces?`,
+      answer: (pieces - 1) * minutes,
+      working: `${pieces} pieces needs ${pieces - 1} cuts, and ${pieces - 1} × ${minutes} = ${(pieces - 1) * minutes}.`,
+    };
+  },
+
+  legsAndHeads(next) {
+    const cows = int(next, 2, 7);
+    const ducks = int(next, 2, 8);
+    const heads = cows + ducks;
+    const legs = cows * 4 + ducks * 2;
+    let answer = null;
+    for (let c = 0; c <= heads; c++) if (c * 4 + (heads - c) * 2 === legs) answer = c;
+    return {
+      text: `A farm has cows and ducks: ${heads} heads and ${legs} legs altogether. How many cows are there?`,
+      answer,
+      working: `${answer} cows and ${heads - answer} ducks: ${answer * 4} + ${(heads - answer) * 2} = ${legs} legs.`,
+    };
+  },
+
+  threeInARow(next) {
+    const first = int(next, 3, 30);
+    const total = first + (first + 1) + (first + 2);
+    let answer = null;
+    for (let a = 1; a <= total; a++) if (a + (a + 1) + (a + 2) === total) answer = a;
+    return {
+      text: `Three numbers in a row add up to ${total}. What is the smallest of them?`,
+      answer,
+      working: `${answer} + ${answer + 1} + ${answer + 2} = ${total}.`,
+    };
+  },
+
+  handshakes(next) {
+    const people = int(next, 5, 12);
+    let answer = 0;
+    for (let i = 0; i < people; i++) for (let j = i + 1; j < people; j++) answer += 1;
+    return {
+      text: `${people} friends each shake hands with every other one exactly once. How many handshakes is that?`,
+      answer,
+      working: `Each of the ${people} shakes ${people - 1} hands, but every shake was counted twice: ${people} × ${people - 1} ÷ 2 = ${answer}.`,
+    };
+  },
+
+  twiceAsOld(next) {
+    const young = int(next, 3, 11);
+    const times = pick([2, 3], next);
+    const ahead = int(next, 2, 8);
+    const total = young + ahead + young * times + ahead;
+    let answer = null;
+    for (let a = 1; a <= 40; a++) if (a + ahead + a * times + ahead === total) answer = a;
+    const who = sample(NAMES, 2, next);
+    return {
+      text: `${who[0]} is ${times} times as old as ${who[1]}. In ${ahead} years their ages will add up to ${total}. How old is ${who[1]} now?`,
+      answer,
+      working: `${who[1]} is ${answer} and ${who[0]} is ${answer * times}. In ${ahead} years that is ${answer + ahead} + ${answer * times + ahead} = ${total}.`,
+    };
+  },
+
+  snailInTheWell(next) {
+    const climb = int(next, 3, 5);
+    const slip = climb - int(next, 1, 2);
+    const depth = climb + (slip > 0 ? int(next, 2, 6) * (climb - slip) + int(next, 0, climb - 1) : 6);
+    let height = 0;
+    let day = 0;
+    while (height < depth && day < 200) {
+      day += 1;
+      height += climb;
+      if (height >= depth) break;
+      height -= slip;
+    }
+    return {
+      text: `A snail climbs ${climb}m up a ${depth}m well each day and slips ${slip}m back each night. On which day does it reach the top?`,
+      answer: day,
+      working: `It gains ${climb - slip}m a day, but on the last day it climbs out before slipping — day ${day}.`,
+    };
+  },
+
+  strikingClock(next) {
+    const from = pick([3, 4, 5, 6], next);
+    const gap = int(next, 1, 3);
+    const seconds = (from - 1) * gap;
+    const to = from + int(next, 2, 6);
+    return {
+      text: `A clock takes ${seconds} seconds to strike ${from}. How many seconds does it take to strike ${to}?`,
+      answer: (to - 1) * gap,
+      working: `${from} strikes have ${from - 1} gaps, so each gap is ${gap}s. ${to} strikes have ${to - 1} gaps: ${(to - 1) * gap}s.`,
+    };
+  },
+
+  sameRate(next) {
+    const m = int(next, 3, 8);
+    const scale = int(next, 2, 20);
+    return {
+      text: `${m} cats catch ${m} mice in ${m} minutes. How many minutes do ${m * scale} cats need to catch ${m * scale} mice?`,
+      answer: m,
+      working: `One cat takes ${m} minutes for one mouse, and there is one cat per mouse either way — still ${m} minutes.`,
+    };
+  },
+
+  matchingSocks(next) {
+    const colours = int(next, 2, 5);
+    return {
+      text: `A drawer holds socks in ${colours} different colours, all jumbled up. Taking them out in the dark, how many must you take to be certain of a matching pair?`,
+      answer: colours + 1,
+      working: `${colours} could all be different, so the next one must match something: ${colours + 1}.`,
+    };
+  },
+};
+
+const STORY_PLAN = {
+  1: ["shareOut", "cutTheLog"],
+  2: ["legsAndHeads", "threeInARow", "cutTheLog"],
+  3: ["handshakes", "shareOut", "strikingClock"],
+  4: ["twiceAsOld", "snailInTheWell", "handshakes"],
+  5: ["sameRate", "matchingSocks", "twiceAsOld", "snailInTheWell"],
+};
+
+export function story(next, level = 1) {
+  const lv = clampLevel(level);
+  for (let attempt = 0; attempt < 200; attempt++) {
+    const name = pick(STORY_PLAN[lv], next);
+    const made = STORIES[name](next);
+    if (made.answer === null || !Number.isInteger(made.answer) || made.answer < 1 || made.answer > 999) continue;
+    return {
+      kind: "story",
+      host: "sable",
+      level: lv,
+      prompt: made.text,
+      hint: "Read it twice. Write down what you know before you try to work anything out.",
+      stimulus: null,
+      ...typed(made.answer),
+      explain: made.working,
+      story: name,
+    };
+  }
+  return giveUp("story", lv);
 }
 
 /* --- the roster ----------------------------------------------------------- */
@@ -760,17 +1264,19 @@ export function counting(next, level = 1) {
 /* Order matters: this is the order things unlock in, and the first four are
    what a new player starts with. */
 export const KINDS = [
-  { id: "scramble", title: "Scramble", host: "bramble", blurb: "Put the letters back in order.", make: scramble },
-  { id: "oddShape", title: "Odd One Out", host: "pip", blurb: "Spot the shape that does not belong.", make: oddShape },
-  { id: "riddle", title: "Riddles", host: "wick", blurb: "Questions that hide their answers.", make: riddle },
-  { id: "counting", title: "Petal Count", host: "fig", blurb: "Count what is in the meadow.", make: counting },
-  { id: "sequence", title: "What Comes Next", host: "vine", blurb: "Finish the pattern.", make: sequence },
-  { id: "oddWord", title: "Word Out", host: "marlow", blurb: "Three words belong together. One does not.", make: oddWord },
+  { id: "sequence", title: "Next Number", host: "vine", blurb: "Find the rule, then the number.", make: sequence },
+  { id: "analogy", title: "Like For Like", host: "pip", blurb: "Work out the link and apply it.", make: analogy },
+  { id: "riddle", title: "Riddles", host: "nox", blurb: "The obvious answer is the wrong one.", make: riddle },
+  { id: "equations", title: "Fruit Sums", host: "plum", blurb: "Three sums, three unknowns.", make: equations },
+  { id: "pyramid", title: "Number Pyramid", host: "tock", blurb: "Every brick is the two below it.", make: pyramid },
+  { id: "ladder", title: "Word Ladder", host: "bramble", blurb: "One letter at a time, both ends must fit.", make: ladder },
+  { id: "shapes", title: "Count the Shapes", host: "juno", blurb: "Every size counts, not just the small ones.", make: shapes },
+  { id: "story", title: "Word Problems", host: "sable", blurb: "Puzzles hiding inside sentences.", make: story },
+  { id: "liars", title: "True or False", host: "wick", blurb: "Some of them always lie. Work out which.", make: liars },
   { id: "mirror", title: "Mirror", host: "skiff", blurb: "Turned, or flipped? Tell them apart.", make: mirror },
-  { id: "numberChain", title: "Number Chain", host: "tock", blurb: "Find the missing sign.", make: numberChain },
-  { id: "flash", title: "Flash", host: "nox", blurb: "Look hard, then say what vanished.", make: flash },
-  { id: "wordHunt", title: "Word Hunt", host: "mote", blurb: "A word is hiding in the letters.", make: wordHunt },
-  { id: "balance", title: "Balance", host: "plum", blurb: "Weigh one thing against another.", make: balance },
+  { id: "logic", title: "Who's Who", host: "marlow", blurb: "Cross off everything the clues rule out.", make: logic },
+  { id: "cipher", title: "Secret Code", host: "mote", blurb: "Break the code, then spell it.", make: cipher },
+  { id: "folding", title: "Fold It", host: "fig", blurb: "Fold the paper into a cube in your head.", make: folding },
 ];
 
 export const KIND_BY_ID = Object.fromEntries(KINDS.map((k) => [k.id, k]));
@@ -785,9 +1291,7 @@ export function makePuzzle(kindId, next, level) {
    puzzle exactly the way the screen does. */
 export function isCorrect(puzzle, response) {
   if (puzzle.form === "choice") return response === puzzle.answer;
+  if (puzzle.form === "keypad") return String(response).trim() === puzzle.answer;
   if (puzzle.form === "letters") return String(response).toUpperCase() === puzzle.answer;
-  if (puzzle.form === "grid") {
-    return Array.isArray(response) && response.length === puzzle.answer.length && response.every((c, i) => c === puzzle.answer[i]);
-  }
   return false;
 }

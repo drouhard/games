@@ -2,11 +2,12 @@
    progress.js; this file only turns those objects into elements and turns taps
    back into answers.
 
-   The input rule the whole thing is built around: a tap never commits. Tapping
-   an answer picks it up, tapping it again or tapping another puts it back, and
-   nothing is scored until the labelled button at the bottom is pressed. The
-   letter tray and the word grid work the same way - every tap is free and
-   every tap is undoable. */
+   Two rules shape the input. A tap never commits: picking an answer, typing a
+   digit and placing a letter are all free and all undoable, and nothing is
+   scored until the button at the bottom. And a right answer never asks for a
+   tap it does not need - it shows the tick, says why in one line, and moves on
+   by itself. Only a wrong answer waits, because that is the one worth reading.
+   Two taps a puzzle is the floor and this sits on it. */
 
 import * as art from "./art.js";
 import * as puz from "./puzzles.js";
@@ -44,21 +45,24 @@ const el = {
 const save = P.load();
 const rand = art.rng((Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0);
 
+/* How long a right answer sits before the next puzzle arrives: long enough to
+   see the tick and read one line, short enough that nobody taps "Next" ten
+   times a Journey. A tap anywhere skips the wait. */
+const SAVOUR_MS = 1500;
+
 let mode = null; // "journey" | "practice"
 let plan = [];
-let marks = []; // per round: true, false or null
+let marks = [];
 let round = 0;
 let hearts = 0;
 let correct = 0;
 let practiceKind = null;
-let practiceLevel = 1;
-let practiceRun = 0; // right answers in a row, which is what moves the level
 
 let puzzle = null;
-let phase = "ask"; // "study" | "ask" | "done"
-let pick = null; // number, letter array, or cell path
-let tray = []; // scramble: which tray tiles have been used
-let studyTimer = null;
+let phase = "ask"; // "ask" | "done"
+let pick = null; // option index, digit string, or placed letters
+let tray = []; // which letter tiles have been used
+let advanceTimer = null;
 
 /* --- the garden ----------------------------------------------------------- */
 
@@ -106,7 +110,7 @@ function paintGarden() {
 }
 
 function showGarden() {
-  clearTimeout(studyTimer);
+  clearTimeout(advanceTimer);
   mode = null;
   puzzle = null;
   el.sheet.hidden = true;
@@ -133,8 +137,6 @@ function startJourney() {
 function startPractice(kindId) {
   mode = "practice";
   practiceKind = kindId;
-  practiceLevel = 1;
-  practiceRun = 0;
   round = 0;
   el.sheet.hidden = true;
   el.garden.hidden = true;
@@ -143,24 +145,19 @@ function startPractice(kindId) {
 }
 
 function beginRound() {
-  clearTimeout(studyTimer);
-  const kindId = mode === "journey" ? plan[round].kind : practiceKind;
-  const level = mode === "journey" ? plan[round].level : practiceLevel;
-  puzzle = puz.makePuzzle(kindId, rand, level);
-  pick = puzzle.form === "letters" ? [] : puzzle.form === "grid" ? [] : null;
+  clearTimeout(advanceTimer);
+  const kindId = mode === "journey" ? plan[round] : practiceKind;
+  // The level is not this run's business: every puzzle remembers where this
+  // player got to on it, in Journey and Practice alike.
+  puzzle = puz.makePuzzle(kindId, rand, P.levelFor(save, kindId));
+  pick = puzzle.form === "choice" ? null : puzzle.form === "keypad" ? "" : [];
   tray = [];
+  phase = "ask";
   el.hint.disabled = false;
   el.verdict.textContent = "";
   el.verdict.className = "verdict";
-
   paintTop();
-  if (puzzle.study) {
-    phase = "study";
-    runStudy();
-  } else {
-    phase = "ask";
-    paintAsk();
-  }
+  paintAsk();
 }
 
 /* --- the frame ------------------------------------------------------------ */
@@ -179,111 +176,146 @@ function paintTop() {
   } else {
     el.pips.replaceChildren();
     el.hearts.className = "hearts hearts--practice";
-    el.hearts.textContent = `level ${practiceLevel}`;
+    el.hearts.textContent = `level ${P.levelFor(save, practiceKind)}`;
   }
 }
 
-function setHost(mood) {
-  el.host.innerHTML = art.mascot(puzzle.host, { mood });
-}
-
-/* --- the Flash look-and-remember phase ------------------------------------ */
-
-function runStudy() {
-  setHost("think");
-  el.prompt.textContent = "Look hard. These are about to vanish.";
-  el.stim.hidden = false;
-  el.stim.innerHTML = "";
-  el.stim.append(buildStimulus(puzzle.study.stimulus));
-  el.stage.classList.add("stage--stim", "stage--study");
-  el.stage.classList.remove("stage--bare");
-
-  const bar = document.createElement("div");
-  bar.className = "timer";
-  const fill = document.createElement("div");
-  fill.className = "timer__fill";
-  bar.append(fill);
-  el.answers.className = "answers";
-  el.answers.replaceChildren(bar);
-
-  el.commit.disabled = true;
-  el.commit.textContent = "Watching…";
-  el.hint.disabled = true;
-  // Two frames, so the transition has a start value to animate away from. The
-  // duration is set !important because base.css flattens every transition
-  // under prefers-reduced-motion - right for decoration, wrong for a bar whose
-  // whole job is to say how long is left.
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      fill.style.setProperty("transition-property", "transform", "important");
-      fill.style.setProperty("transition-timing-function", "linear", "important");
-      fill.style.setProperty("transition-duration", `${puzzle.study.seconds}s`, "important");
-      fill.style.transform = "scaleX(0)";
-    });
-  });
-  studyTimer = setTimeout(() => {
-    phase = "ask";
-    paintAsk();
-  }, puzzle.study.seconds * 1000);
-}
-
-/* --- the question --------------------------------------------------------- */
-
 function paintAsk() {
-  setHost("think");
-  el.hint.disabled = false;
+  el.host.innerHTML = art.mascot(puzzle.host, { mood: "think" });
   el.prompt.textContent = puzzle.prompt;
   el.stim.hidden = !puzzle.stimulus;
   el.stim.innerHTML = "";
   if (puzzle.stimulus) el.stim.append(buildStimulus(puzzle.stimulus));
-  el.stage.classList.remove("stage--study");
-  el.stage.classList.toggle("stage--stim", Boolean(puzzle.stimulus));
-  el.stage.classList.toggle("stage--bare", !puzzle.stimulus);
+  el.stage.className = "stage";
+  if (puzzle.stimulus) el.stage.classList.add("stage--stim");
+  else el.stage.classList.add("stage--bare");
+  // Sentences to reason over need width and no picture; the split goes the
+  // other way for those.
+  if (puzzle.stimulus?.type === "lines") el.stage.classList.add("stage--reading");
   buildAnswers();
   el.commit.textContent = "Check";
   refreshCommit();
 }
 
+/* --- the pictures --------------------------------------------------------- */
+
 function buildStimulus(stim) {
-  if (stim.type === "tokens") {
-    const row = document.createElement("div");
-    row.className = "row";
-    for (const t of stim.items) {
-      const cell = document.createElement("div");
-      cell.className = "row__cell";
-      cell.innerHTML = art.token(t);
-      row.append(cell);
+  const box = document.createElement("div");
+  switch (stim.type) {
+    case "terms": {
+      box.className = "terms";
+      for (const item of stim.items) {
+        const chip = document.createElement("span");
+        chip.className = "term";
+        chip.textContent = item;
+        box.append(chip);
+      }
+      if (stim.tail) {
+        const tail = document.createElement("span");
+        tail.className = "term term--ask";
+        tail.textContent = stim.tail;
+        box.append(tail);
+      }
+      return box;
     }
-    if (stim.tail) {
-      const tail = document.createElement("div");
-      tail.className = "row__tail";
-      tail.textContent = stim.tail;
-      row.append(tail);
+
+    case "equations": {
+      box.className = "eq";
+      const row = (terms, op, value) => {
+        const line = document.createElement("div");
+        line.className = "eq__row";
+        terms.forEach((t, i) => {
+          if (i) {
+            const sign = document.createElement("span");
+            sign.className = "eq__op";
+            sign.textContent = op;
+            line.append(sign);
+          }
+          const tok = document.createElement("span");
+          tok.className = "eq__tok";
+          tok.innerHTML = art.token(stim.symbols[t]);
+          line.append(tok);
+        });
+        const equals = document.createElement("span");
+        equals.className = "eq__op";
+        equals.textContent = "=";
+        const total = document.createElement("span");
+        total.className = `eq__val${value === null ? " eq__val--ask" : ""}`;
+        total.textContent = value === null ? "?" : String(value);
+        line.append(equals, total);
+        return line;
+      };
+      for (const r of stim.rows) box.append(row(r.terms, r.op, r.value));
+      box.append(row(stim.ask.terms, stim.ask.op, null));
+      return box;
     }
-    return row;
+
+    case "pyramid": {
+      box.className = "pyr";
+      for (const row of stim.cells) {
+        const line = document.createElement("div");
+        line.className = "pyr__row";
+        for (const cell of row) {
+          const brick = document.createElement("span");
+          brick.className = `pyr__brick${cell.ask ? " pyr__brick--ask" : cell.value === null ? " pyr__brick--blank" : ""}`;
+          brick.textContent = cell.ask ? "?" : cell.value === null ? "" : String(cell.value);
+          line.append(brick);
+        }
+        box.append(line);
+      }
+      return box;
+    }
+
+    case "figure": {
+      box.className = "row";
+      box.innerHTML = art.figure(stim.cells, stim.cols, stim.rows);
+      return box;
+    }
+
+    case "net": {
+      box.className = "net";
+      box.style.gridTemplateColumns = `repeat(${stim.cols}, 1fr)`;
+      const bySpot = new Map(stim.faces.map((f, i) => [`${f.x},${f.y}`, i]));
+      for (let y = 0; y < stim.rows; y++) {
+        for (let x = 0; x < stim.cols; x++) {
+          const i = bySpot.get(`${x},${y}`);
+          const cell = document.createElement("span");
+          if (i === undefined) {
+            cell.className = "net__gap";
+          } else {
+            cell.className = `net__cell${i === stim.ring ? " net__cell--ring" : ""}`;
+            cell.innerHTML = art.token(stim.faces[i].token);
+          }
+          box.append(cell);
+        }
+      }
+      return box;
+    }
+
+    case "lines": {
+      box.className = "lines";
+      for (const line of stim.lines) {
+        const p = document.createElement("p");
+        p.textContent = line;
+        box.append(p);
+      }
+      return box;
+    }
+
+    default: {
+      box.className = "sum";
+      box.textContent = stim.text;
+      return box;
+    }
   }
-  if (stim.type === "scene") {
-    const box = document.createElement("div");
-    box.innerHTML = art.scene(stim.items, stim);
-    box.className = "row";
-    return box;
-  }
-  if (stim.type === "scales") {
-    const wrap = document.createElement("div");
-    wrap.className = "row";
-    wrap.innerHTML = art.scales(stim.facts);
-    return wrap;
-  }
-  const sum = document.createElement("div");
-  sum.className = "sum";
-  sum.textContent = stim.text;
-  return sum;
 }
+
+/* --- the answers ---------------------------------------------------------- */
 
 function buildAnswers() {
   if (puzzle.form === "choice") return buildChoices();
-  if (puzzle.form === "letters") return buildLetters();
-  return buildGrid();
+  if (puzzle.form === "keypad") return buildKeypad();
+  return buildLetters();
 }
 
 function buildChoices() {
@@ -305,6 +337,27 @@ function buildChoices() {
       return button;
     })
   );
+}
+
+/* A number you type, not one of four cards to guess between. */
+function buildKeypad() {
+  el.answers.className = "answers pad";
+  const display = document.createElement("div");
+  display.className = `pad__display${pick ? "" : " pad__display--empty"}`;
+  display.textContent = pick || "type your answer";
+
+  const keys = document.createElement("div");
+  keys.className = "pad__keys";
+  for (const label of ["1", "2", "3", "4", "5", "6", "7", "8", "9", "⌫", "0", "✕"]) {
+    const key = document.createElement("button");
+    key.type = "button";
+    key.className = `pad__key${label === "⌫" || label === "✕" ? " pad__key--edit" : ""}`;
+    key.dataset.key = label;
+    key.textContent = label;
+    key.setAttribute("aria-label", label === "⌫" ? "Rub out the last digit" : label === "✕" ? "Clear" : label);
+    keys.append(key);
+  }
+  el.answers.replaceChildren(display, keys);
 }
 
 function buildLetters() {
@@ -332,44 +385,34 @@ function buildLetters() {
     tile.setAttribute("aria-label", `Letter ${letter}`);
     bank.append(tile);
   });
-
   el.answers.replaceChildren(slots, bank);
 }
 
-function buildGrid() {
-  el.answers.className = "answers letters";
-  const word = document.createElement("p");
-  word.className = "picked-word";
-  word.textContent = pick.map((c) => puzzle.grid.cells[c]).join(" ");
-
-  const grid = document.createElement("div");
-  grid.className = "grid";
-  grid.style.gridTemplateColumns = `repeat(${puzzle.grid.size}, 1fr)`;
-  puzzle.grid.cells.forEach((letter, i) => {
-    const cell = document.createElement("button");
-    cell.type = "button";
-    cell.className = `cell${pick.includes(i) ? " cell--picked" : ""}`;
-    cell.dataset.cell = String(i);
-    cell.textContent = letter;
-    grid.append(cell);
-  });
-  el.answers.replaceChildren(grid, word);
-}
-
-/* --- picking -------------------------------------------------------------- */
+/* --- picking (all of it free, all of it undoable) ------------------------- */
 
 function refreshCommit() {
   const ready =
-    puzzle.form === "choice" ? pick !== null : puzzle.form === "letters" ? pick.filter(Boolean).length === puzzle.answer.length : pick.length === puzzle.answer.length;
+    puzzle.form === "choice"
+      ? pick !== null
+      : puzzle.form === "keypad"
+        ? pick.length > 0
+        : pick.filter(Boolean).length === puzzle.answer.length;
   el.commit.disabled = !ready;
 }
 
 function choose(i) {
-  // Picking is free and reversible: tap the same card again to put it back.
   pick = pick === i ? null : i;
   for (const button of el.answers.querySelectorAll(".opt")) {
     button.classList.toggle("opt--picked", Number(button.dataset.pick) === pick);
   }
+  refreshCommit();
+}
+
+function typeKey(label) {
+  if (label === "⌫") pick = pick.slice(0, -1);
+  else if (label === "✕") pick = "";
+  else if (pick.length < 3) pick = (pick === "0" ? "" : pick) + label;
+  buildKeypad();
   refreshCommit();
 }
 
@@ -393,42 +436,12 @@ function takeLetter(slotIndex) {
   refreshCommit();
 }
 
-/* A path has to be a straight run, so the grid never accepts a shape the
-   answer could not be. Tapping a cell already in the path rubs out from there
-   on; tapping somewhere that cannot continue the run starts a fresh one. */
-function traceCell(cell) {
-  const at = pick.indexOf(cell);
-  if (at !== -1) {
-    pick = pick.slice(0, at);
-  } else if (pick.length === 0) {
-    pick = [cell];
-  } else if (pick.length >= puzzle.answer.length) {
-    pick = [cell];
-  } else {
-    const size = puzzle.grid.size;
-    const xy = (c) => [c % size, Math.floor(c / size)];
-    const [lx, ly] = xy(pick[pick.length - 1]);
-    const [cx, cy] = xy(cell);
-    const dx = cx - lx;
-    const dy = cy - ly;
-    const stepOk = Math.abs(dx) <= 1 && Math.abs(dy) <= 1 && (dx || dy);
-    let ok = stepOk;
-    if (ok && pick.length >= 2) {
-      const [px, py] = xy(pick[pick.length - 2]);
-      ok = lx - px === dx && ly - py === dy;
-    }
-    pick = ok ? pick.concat(cell) : [cell];
-  }
-  buildGrid();
-  refreshCommit();
-}
-
 /* --- scoring -------------------------------------------------------------- */
 
 function response() {
   if (puzzle.form === "choice") return pick;
-  if (puzzle.form === "letters") return pick.map((p) => p.letter).join("");
-  return pick;
+  if (puzzle.form === "keypad") return pick;
+  return pick.map((p) => p.letter).join("");
 }
 
 function commit() {
@@ -436,19 +449,12 @@ function commit() {
   phase = "done";
   P.bankAnswer(save, puzzle.kind, right, mode);
   P.store(save);
-  setHost(right ? "happy" : "sad");
+  el.host.innerHTML = art.mascot(puzzle.host, { mood: right ? "happy" : "sad" });
 
   if (mode === "journey") {
     marks[round] = right;
     if (right) correct += 1;
     else hearts -= 1;
-  } else if (right) {
-    // Practice finds its own level: two in a row moves up, a miss moves down.
-    practiceRun += 1;
-    if (practiceRun % 2 === 0) practiceLevel = Math.min(5, practiceLevel + 1);
-  } else {
-    practiceRun = 0;
-    practiceLevel = Math.max(1, practiceLevel - 1);
   }
   paintTop();
 
@@ -457,41 +463,51 @@ function commit() {
   el.verdict.textContent = `${right ? "Yes! " : "Not quite. "}${puzzle.explain}`;
   el.hint.disabled = true;
   el.commit.disabled = false;
-  el.commit.textContent = mode === "journey" && (round + 1 >= plan.length || hearts <= 0) ? "Finish" : "Next";
+  const last = mode === "journey" && (round + 1 >= plan.length || hearts <= 0);
+  el.commit.textContent = last ? "Finish" : "Next";
+
+  // The whole point of the tick is that you do not have to acknowledge it.
+  if (right) advanceTimer = setTimeout(advance, SAVOUR_MS);
+}
+
+/* Nothing here is switched off with `disabled`: a disabled button swallows the
+   tap instead of letting it bubble, and the tap that lands on one is usually
+   the one meant to move on to the next puzzle. The handlers already ignore
+   everything once the phase is "done", so aria-disabled says the same thing to
+   a screen reader without eating the touch. */
+function lock(element) {
+  element.setAttribute("aria-disabled", "true");
+  element.classList.add("is-locked");
 }
 
 function markAnswers(right) {
   if (puzzle.form === "choice") {
     for (const button of el.answers.querySelectorAll(".opt")) {
       const i = Number(button.dataset.pick);
-      button.disabled = true;
+      lock(button);
       button.classList.remove("opt--picked");
       if (i === puzzle.answer) button.classList.add("opt--right");
       else if (i === pick) button.classList.add("opt--wrong");
     }
-  } else if (puzzle.form === "letters") {
-    for (const slot of el.answers.querySelectorAll(".tile--slot")) {
-      slot.classList.add(right ? "tile--right" : "tile--wrong");
-    }
+  } else if (puzzle.form === "keypad") {
+    const display = el.answers.querySelector(".pad__display");
+    display.classList.add(right ? "pad__display--right" : "pad__display--wrong");
+    if (!right) display.textContent = `${pick} — it was ${puzzle.answer}`;
+    for (const key of el.answers.querySelectorAll(".pad__key")) lock(key);
+  } else {
+    for (const slot of el.answers.querySelectorAll(".tile--slot")) slot.classList.add(right ? "tile--right" : "tile--wrong");
     if (!right) {
-      // Show the word rather than making them guess again from nothing.
       el.answers.querySelectorAll(".tile--slot").forEach((slot, i) => {
         slot.textContent = puzzle.answer[i];
       });
     }
     for (const tile of el.answers.querySelectorAll(".tray .tile")) tile.classList.add("tile--used");
-  } else {
-    for (const cell of el.answers.querySelectorAll(".cell")) {
-      const i = Number(cell.dataset.cell);
-      cell.disabled = true;
-      cell.classList.remove("cell--picked");
-      if (puzzle.answer.includes(i)) cell.classList.add("cell--right");
-      else if (pick.includes(i)) cell.classList.add("cell--wrong");
-    }
   }
 }
 
 function advance() {
+  clearTimeout(advanceTimer);
+  if (phase !== "done") return;
   if (mode === "practice") {
     round += 1;
     beginRound();
@@ -508,7 +524,7 @@ function endJourney() {
   P.store(save);
 
   const ranOut = hearts <= 0;
-  const host = puz.KIND_BY_ID[plan[Math.min(round, plan.length - 1)].kind].host;
+  const host = puz.KIND_BY_ID[plan[Math.min(round, plan.length - 1)]].host;
   el.sheetArt.innerHTML = art.mascot(host, { mood: correct >= plan.length - 2 ? "happy" : "calm" });
   el.sheetTitle.textContent = correct === plan.length ? "Every flower bloomed!" : ranOut ? "Out of hearts" : "Journey done";
   const petals = correct * P.PETALS_PER_CORRECT + bonus;
@@ -519,9 +535,7 @@ function endJourney() {
 
   if (unlocked.length) {
     el.sheetUnlock.hidden = false;
-    el.sheetUnlock.textContent = unlocked
-      .map((k) => `${art.MASCOTS[k.host].name} has moved into the garden — ${k.blurb}`)
-      .join(" ");
+    el.sheetUnlock.textContent = unlocked.map((k) => `${art.MASCOTS[k.host].name} has moved into the garden — ${k.blurb}`).join(" ");
   } else {
     const next = P.nextUnlock(save);
     el.sheetUnlock.hidden = !next;
@@ -546,12 +560,12 @@ el.answers.addEventListener("click", (event) => {
   if (phase !== "ask") return;
   const option = event.target.closest(".opt");
   if (option) return choose(Number(option.dataset.pick));
+  const key = event.target.closest("[data-key]");
+  if (key) return typeKey(key.dataset.key);
   const slot = event.target.closest("[data-slot]");
   if (slot) return takeLetter(Number(slot.dataset.slot));
   const tile = event.target.closest("[data-tile]");
   if (tile) return placeLetter(Number(tile.dataset.tile));
-  const cell = event.target.closest("[data-cell]");
-  if (cell) return traceCell(Number(cell.dataset.cell));
 });
 
 el.hint.addEventListener("click", () => {
@@ -563,7 +577,16 @@ el.hint.addEventListener("click", () => {
 
 el.commit.addEventListener("click", () => {
   if (phase === "ask") commit();
-  else if (phase === "done") advance();
+  else advance();
+});
+
+/* Once the answer is in, anywhere on the puzzle moves on - no aiming at a
+   button, and no waiting out the pause if you have already read it. This is
+   why nothing gets the `disabled` attribute when a round is graded. */
+el.play.addEventListener("click", (event) => {
+  if (phase !== "done") return;
+  if (event.target.closest("#commit") || event.target.closest("#quit")) return;
+  advance();
 });
 
 /* --- boot ----------------------------------------------------------------- */

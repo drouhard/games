@@ -45,29 +45,44 @@ not at the domain root, so a leading `/` in an `href` or `src` would 404.
 
 ### Puzzlebloom
 
-Eleven brain teasers for a nine-year-old, hosted by eleven chibi animals
+Thirteen brain teasers for a nine-year-old, hosted by thirteen chibi animals
 painted in watercolour. Nothing in it looks or plays like anything else in this
 repo: no combat, no numbers going up, no pixels.
 
-The puzzles are **generated, not listed**, so they do not run out: unscramble a
-word, answer a riddle, spot the shape that does not belong, spot the word that
-does not belong, tell a mirrored shape from a turned one, finish a pattern,
-weigh fruit against fruit on a balance, remember a row of creatures and say
-which one was never there, find a word hidden in a grid of letters, find the
-missing sign in a sum, and count what is scattered across a meadow. Each has
-five difficulty levels and its own host.
+The rule every puzzle in it has to pass is that it cannot be answered by
+noticing something. Spotting the odd colour and counting the ducks are
+recognition, and a nine-year-old beats them without thinking. So: continue a
+number sequence, complete an analogy, solve three simultaneous equations
+written in fruit, fill the gap in a pyramid of bricks that are each the two
+under them added together, work out who is lying on an island of liars and
+truth-tellers, cross off a logic grid, cross a word ladder one letter at a
+time, count every square hiding inside a figure, break a shift cipher, fold a
+paper net into a cube in your head and say which face lands opposite, tell a
+mirrored shape from a turned one, and solve word problems with a snail in a
+well and a clock that strikes.
 
-**Journey** is ten puzzles with a rising difficulty ladder and five hearts;
-**Practice** is one host, endlessly, finding its own level — two right in a row
-moves up, a miss moves down. Petals are banked the instant they are earned, so
-running out of hearts on question nine, or simply walking out, keeps
-everything already won. Petals are a lifetime count and hosts unlock at
-thresholds on it: nothing is ever spent and a bad run can never take anything
-away. Stars come from the longest run of right answers on each puzzle.
+**Two thirds of them are answered on a keypad, not from four cards** — a typed
+number cannot be guessed at, and that single decision is most of what makes it
+hard.
 
-Every tap is free and reversible — picking an answer highlights it, tapping a
-letter puts it in a slot and tapping it again takes it back — and nothing is
-ever scored until the Check button at the bottom.
+The difficulty is **remembered per puzzle and per player**. Two right in a row
+on a puzzle and it moves up a level; two wrong and it eases off, settling
+wherever that child is getting about half of them. It is kept in the save, not
+reset each run, because ten questions is not enough to climb from the bottom
+and a child who has mastered a puzzle should never be handed the easy version
+of it again. A modelled bright player ends up at level 4-5 on the puzzles they
+are good at and level 3 on the ones they are not.
+
+**Two taps a puzzle.** Pick or type, then Check — and a right answer shows the
+tick, says why in one line and moves on by itself. Only a wrong answer waits,
+because that is the one worth reading, and then anywhere on the screen
+continues. Nothing is ever scored on the tap that selects it.
+
+**Journey** is ten puzzles and six hearts; **Practice** is one host, endlessly.
+Petals are banked the instant they are earned, so running out of hearts on
+question nine — or simply walking out — keeps everything already won. Petals
+are a lifetime count and hosts unlock at thresholds on it: nothing is ever
+spent and a bad run can never take anything away.
 
 The art is watercolour, not pixels: no image files, no sprite grids. Every
 creature and token is built in `art.js` out of wobbled point loops painted in
@@ -75,19 +90,22 @@ three stacked washes — a pale bleed, the body of the colour, and the rim where
 pigment pools at a wet edge — multiplying onto a paper ground. The wobble comes
 from a seeded RNG so a token looks the same each time it is drawn.
 
-`tools/bloom-sim.mjs` is the reason it can be trusted. Generated puzzles fail
-one in four hundred at a time, which is invisible from playing, so everything
-is generated in bulk and graded by code that does not share the generator's
-opinion: the sums are re-evaluated, the meadow is re-counted from the picture
-against the words of the question, the hidden word is re-searched in its grid,
-the pattern is re-solved by a solver that never saw the rules, and every
-shape's mirror image is measured against all 360 rotations of it to prove the
-Mirror puzzle is asking about a difference that really exists. Over 11,000
-puzzles it reports no faults, the right answer lands in each of the four slots
-25% of the time, and every difficulty proxy climbs from level 1 to level 5.
-Careers say a middling player opens all eleven hosts in 11-13 Journeys and
-reaches the end of a run 93% of the time; a struggling one still opens all
-eleven, in 14-17.
+`tools/bloom-sim.mjs` is why generated puzzles can be trusted. The generator
+*builds* a situation forwards; the checker *solves it backwards* from the words
+and pictures the player is actually shown, and the two never share a formula.
+The liar puzzle is re-solved from its printed sentences, the logic grid from
+its printed clues, the cipher re-decoded from the example it prints, the cube
+re-folded by rolling a labelled die instead of tracking face normals, every
+word problem re-solved from the numbers in its own sentence, and every
+sequence re-read by a differencing solver that must reach the same next number.
+Anything with two defensible answers is thrown away before it is ever shown.
+
+It has earned its keep: it caught word grids where a palindrome gave two right
+answers, a spot counter that wrapped mid-row, a "flower" that was really a
+six-pointed star, counting questions whose answer was none, and an analogy that
+offered the same word on two different cards. Over 26,000 puzzles it now
+reports no faults, the answer lands in each of the four slots about a quarter
+of the time, and every difficulty proxy climbs from level 1 to level 5.
 
 ### Wildermark
 
